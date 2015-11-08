@@ -453,6 +453,8 @@ void CGameClient::OnReset()
 
 	for(int i = 0; i < 150; i++)
 		m_aWeaponData[i].m_Tick = -1;
+
+	m_ServerVersion = 0;
 }
 
 
@@ -807,6 +809,19 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, bool IsDummy)
 		CNetMsg_Sv_PlayerTime *pMsg = (CNetMsg_Sv_PlayerTime *)pRawMsg;
 		m_aClients[pMsg->m_ClientID].m_Score = pMsg->m_Time;
 	}
+	else if(MsgId == NETMSGTYPE_ISDDNET)
+	{
+		int Version = pUnpacker->GetInt();
+
+		if (pUnpacker->Error())
+			m_ServerVersion = 0;
+		else
+			m_ServerVersion = Version;
+
+		char aBuf[64];
+		str_format(aBuf, sizeof(aBuf), "ServerVersion: %d", m_ServerVersion);
+		Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "client", aBuf);
+	}
 }
 
 void CGameClient::OnStateChange(int NewState, int OldState)
@@ -1065,9 +1080,9 @@ void CGameClient::OnNewSnapshot()
 						Evolve(&m_Snap.m_aCharacters[Item.m_ID].m_Cur, Client()->GameTick());
 				}
 
-				char aBuf[256];
-				str_format(aBuf, sizeof(aBuf), "WeaponFlags: %d", m_Snap.m_aCharacters[Item.m_ID].m_Cur.m_WeaponFlags);
-				Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
+				// char aBuf[256];
+				// str_format(aBuf, sizeof(aBuf), "WeaponFlags: %d", m_Snap.m_aCharacters[Item.m_ID].m_Cur.m_WeaponFlags);
+				// Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
 			}
 			else if(Item.m_Type == NETOBJTYPE_SPECTATORINFO)
 			{
@@ -1266,16 +1281,16 @@ void CGameClient::OnNewSnapshot()
 
 	if(!m_DDRaceMsgSent[0] && m_Snap.m_pLocalInfo)
 	{
-		CMsgPacker Msg(NETMSGTYPE_CL_ISDDNET);
-		Msg.AddInt(CLIENT_VERSIONNR);
+		CMsgPacker Msg(NETMSGTYPE_ISDDNET);
+		Msg.AddInt(NET_VERSIONNR);
 		Client()->SendMsgExY(&Msg, MSGFLAG_VITAL,false, 0);
 		m_DDRaceMsgSent[0] = true;
 	}
 
 	if(!m_DDRaceMsgSent[1] && m_Snap.m_pLocalInfo && Client()->DummyConnected())
 	{
-		CMsgPacker Msg(NETMSGTYPE_CL_ISDDNET);
-		Msg.AddInt(CLIENT_VERSIONNR);
+		CMsgPacker Msg(NETMSGTYPE_ISDDNET);
+		Msg.AddInt(NET_VERSIONNR);
 		Client()->SendMsgExY(&Msg, MSGFLAG_VITAL,false, 1);
 		m_DDRaceMsgSent[1] = true;
 	}
