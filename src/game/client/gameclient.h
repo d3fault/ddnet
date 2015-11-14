@@ -316,6 +316,8 @@ public:
 	virtual const char *Version();
 	virtual const char *NetVersion();
 
+	virtual const CNetObj_PlayerInput &getPlayerInput(int dummy);
+
 
 	// actions
 	// TODO: move these
