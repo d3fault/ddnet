@@ -51,5 +51,6 @@ bam.exe
 *.opensdf
 *.pyc
 *.tags
+*.dll
 
 DDNet*
