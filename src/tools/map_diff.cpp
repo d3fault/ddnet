@@ -63,7 +63,7 @@ bool Process(IStorage *pStorage, char **pMapNames)
 			continue;
 
 		CMapItemLayerTilemap *pTilemap[2];
-		char aName[2][16];
+                char aName[2][16];
 
 		for(int i = 0; i < 2; ++i)
 		{
@@ -82,15 +82,18 @@ bool Process(IStorage *pStorage, char **pMapNames)
 		for(int i = 0; i < 2; ++i)
 			pTile[i] = (CTile *)Maps[i].GetData(pTilemap[i]->m_Data);
 
+                dbg_msg("map_compare", "width = %d -- height = %d", pTilemap[0]->m_Width, pTilemap[0]->m_Height);
 		for(int y = 0; y < pTilemap[0]->m_Height; y++)
 		{
 			for(int x = 0; x < pTilemap[0]->m_Width; x++)
 			{
 				int pos = y * pTilemap[0]->m_Width + x;
-				if(pTile[0][pos].m_Index != pTile[1][pos].m_Index || pTile[0][pos].m_Flags != pTile[1][pos].m_Flags)
+				/*if(pTile[0][pos].m_Index != pTile[1][pos].m_Index || pTile[0][pos].m_Flags != pTile[1][pos].m_Flags)
 				{
 					dbg_msg("map_compare", "[%d:%s] %dx%d: (index: %d, flags: %d) != (index: %d, flags: %d)", Num[0], aName[0], x, y, pTile[0][pos].m_Index, pTile[0][pos].m_Flags, pTile[1][pos].m_Index, pTile[0][pos].m_Flags);
-				}
+				}*/
+
+                                dbg_msg("map_dump", "[%d:%s] %dx%d: (index: %d, flags: %d) != (index: %d, flags: %d)", Num[0], aName[0], x, y, pTile[0][pos].m_Index, pTile[0][pos].m_Flags, pTile[1][pos].m_Index, pTile[0][pos].m_Flags);
 			}
 		}
 	}
@@ -101,7 +104,7 @@ bool Process(IStorage *pStorage, char **pMapNames)
 int main(int argc, char* argv[])
 {
 	dbg_logger_stdout();
-	dbg_logger_file("map_diff.txt");
+        dbg_logger_file("map_diff.txt");
 
 	IStorage *pStorage = CreateLocalStorage();
 

@@ -66,6 +66,12 @@ void CreateEmptyMap(IStorage *pStorage)
 		Tiles[i].m_Skip = 0;
 		Tiles[i].m_Reserved = 0;
 	}
+
+	Tiles[0].m_Index = ENTITY_SPAWN_RED;
+	Tiles[1].m_Index = TILE_DEATH;
+	Tiles[2].m_Index = TILE_NOHOOK;
+	Tiles[3].m_Index = ENTITY_SPAWN;
+
 	Writer.AddData(sizeof(Tiles), &Tiles);
 
 	Writer.Finish();
