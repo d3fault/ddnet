@@ -1101,6 +1101,7 @@ void CMenus::RenderDemoList(CUIRect MainView)
 	int NewSelected = -1;
 	int ItemIndex = -1;
 
+        int TotalDemoLength = 0;
 	for(sorted_array<CDemoItem>::range r = m_lDemos.all(); !r.empty(); r.pop_front())
 	{
 		ItemIndex++;
@@ -1179,6 +1180,7 @@ void CMenus::RenderDemoList(CUIRect MainView)
 			else if(ID == COL_LENGTH && !r.front().m_IsDir && r.front().m_InfosLoaded)
 			{
 				int Length = r.front().Length();
+                                TotalDemoLength += Length;
 				char aBuf[32];
 				str_format(aBuf, sizeof(aBuf), "%d:%02d", Length/60, Length%60);
 				Button.VMargin(4.0f, &Button);
@@ -1193,6 +1195,7 @@ void CMenus::RenderDemoList(CUIRect MainView)
 			}
 		}
 	}
+        dbg_msg("DEBUG", "TotalDemoLength='%d'", TotalDemoLength);
 
 	UI()->ClipDisable();
 
