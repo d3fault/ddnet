@@ -1,6 +1,8 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 
+#include <unordered_map>
+
 #include <base/tl/string.h>
 
 #include <engine/editor.h>
@@ -635,11 +637,71 @@ void CChat::AddLine(int ClientID, int Team, const char *pLine)
 
 		m_aLines[m_CurrentLine].m_Highlighted = Highlighted;
 
-		if(ClientID < 0) // server or client message
-		{
-			str_copy(m_aLines[m_CurrentLine].m_aName, "*** ", sizeof(m_aLines[m_CurrentLine].m_aName));
-			str_format(m_aLines[m_CurrentLine].m_aText, sizeof(m_aLines[m_CurrentLine].m_aText), "%s", pLine);
-		}
+                if(ClientID < 0) // server or client message
+                {
+                    str_copy(m_aLines[m_CurrentLine].m_aName, "*** ", sizeof(m_aLines[m_CurrentLine].m_aName));
+                    str_format(m_aLines[m_CurrentLine].m_aText, sizeof(m_aLines[m_CurrentLine].m_aText), "%s", pLine);
+
+                    using std::string;
+                    string s(m_aLines[m_CurrentLine].m_aText);
+                    string key("' entered and joined the game");
+                    std::size_t found = s.rfind(key);
+                    if(found != std::string::npos)
+                    {
+                        s.replace(found, key.length(), "");
+                        string nameOnly(s.substr(1, s.length()-1));
+
+                        std::unordered_map<string, string> m =
+                        {
+                            //{ "scapegoat", "scapegoat is a boob" },
+                            { "a", "C++ > C" },
+                            { "test", "C++ > C" },
+                            { "noby", "C++ > C" },
+                            { "Abadon", "Abandon Abadon" },
+                            { "NoHack2Win", "YesHack2Lose" },
+                            { "MooYooThings", "MooYooThings: moo" },
+                            { "jao", "jaogay" },
+                            { "Smurfer", "Smurfer: get smurfed" },
+                            { "Levi :3", "Levi :3: are you 18yo girl from usa that loves anime? can I have your instagram?" },
+                            { "w6rning", "LA > nYc" },
+                            { "Beefywhale", "Beefy 5-layer whale burrito" },
+                            { "steandre", "la puta madre is steandre" },
+                            { "Lem0n", "Lem0n L1me Sprit3" },
+                            { "HotSpanish", "HotSpanish: send horchata" },
+                            { "Kirito", "Kirito: gei" },
+                            { "NigglePig", "NiggerPig <3" },
+                            { "FunCat", "CuntFat <3" },
+                            { "Luke", "Luke: I am your father" },
+                            { "W'", "I W'ork at a mortgage company doing IT" },
+                            { "15", "15: bot" },
+                            { "Pepe", "nigga <3" },
+                            { "louis", "si u ol" },
+                            { "gL. | Kenzo", "WENA gL. | Kenzo 2ND BEST PERKIN FROM CHILE" },
+                            { "abcqwerty", "abcqwerty" },
+                            { "Jade", "Jade <3 bear my children" },
+                            { "NovaShock", "NovaCock" },
+                            { "Hey, fuck you!", "Hey, fuck you!: I accept your offer :3" },
+                            { "Styx", "Styx carry me daddy <3" },
+                            { "gdin", "fake" },
+                            { "Skeith", "A wild faggot appears" },
+                            { "Bawki", "Prowki" },
+                            { "O_o" , "pro_O" }
+                        };
+                        std::unordered_map<std::string, string>::const_iterator got = m.find(nameOnly);
+                        if(got != m.end())
+                        {
+                            int oldMode = m_Mode;
+                            m_Mode = MODE_ALL;
+                            m_LastChatSend = time_get() + 5;
+                            SayChat(got->second.c_str());
+                            m_Mode = oldMode;
+
+                            char aBuf[256];
+                            str_format(aBuf, sizeof(aBuf), "someone joined........ %s -- %s|", nameOnly.c_str(), got->second.c_str());
+                            Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "client", aBuf);
+                        }
+                    }
+                }
 		else
 		{
 			if(m_pClient->m_aClients[ClientID].m_Team == TEAM_SPECTATORS)
