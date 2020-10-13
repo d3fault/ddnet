@@ -3939,23 +3939,18 @@ bool CCommandProcessorFragment_SDL::RunCommand(const CCommandBuffer::SCommand *p
 
 void CCommandProcessor_SDL_OpenGL::RunBuffer(CCommandBuffer *pBuffer)
 {
-	unsigned CmdIndex = 0;
-	while(1)
+	for(CCommandBuffer::SCommand *pCommand = pBuffer->Head(); pCommand; pCommand = pCommand->m_pNext)
 	{
-		const CCommandBuffer::SCommand *pBaseCommand = pBuffer->GetCommand(&CmdIndex);
-		if(pBaseCommand == 0x0)
-			break;
-
-		if(m_pOpenGL->RunCommand(pBaseCommand))
+		if(m_pOpenGL->RunCommand(pCommand))
 			continue;
 
-		if(m_SDL.RunCommand(pBaseCommand))
+		if(m_SDL.RunCommand(pCommand))
 			continue;
 
-		if(m_General.RunCommand(pBaseCommand))
+		if(m_General.RunCommand(pCommand))
 			continue;
 
-		dbg_msg("graphics", "unknown command %d", pBaseCommand->m_Cmd);
+		dbg_msg("graphics", "unknown command %d", pCommand->m_Cmd);
 	}
 }
 
@@ -4384,10 +4379,8 @@ int CGraphicsBackend_SDL_OpenGL::Init(const char *pName, int *Screen, int *pWidt
 	if(Flags & IGraphicsBackend::INITFLAG_RESIZABLE)
 		SdlFlags |= SDL_WINDOW_RESIZABLE;
 #endif
-#if defined(CONF_PLATFORM_MACOSX) // TODO: remove this when fixed in SDL
 	if(Flags & IGraphicsBackend::INITFLAG_BORDERLESS)
 		SdlFlags |= SDL_WINDOW_BORDERLESS;
-#endif
 	if(Flags & IGraphicsBackend::INITFLAG_FULLSCREEN)
 	{
 		// when we are at fullscreen, we really shouldn't allow window sizes, that aren't supported by the driver
