@@ -278,7 +278,7 @@ void CVideo::NextAudioFrame(void (*Mix)(short *pFinalOut, unsigned Frames))
 	if(m_NextAudioFrame && m_Recording && m_HasAudio)
 	{
 		m_ProcessingAudioFrame = true;
-		//dbg_msg("video recorder", "video_frame: %lf", (double)(m_Vframe/m_FPS));
+		//dbg_msg("video_recorder", "video_frame: %lf", (double)(m_Vframe/m_FPS));
 		//if((double)(m_Vframe/m_FPS) < m_AudioStream.pEnc->frame_number*m_AudioStream.pEnc->frame_size/m_AudioStream.pEnc->sample_rate)
 		//return;
 		Mix(m_aBuffer, ALEN);
@@ -545,7 +545,7 @@ bool CVideo::OpenAudio()
 	av_opt_set_sample_fmt(m_AudioStream.pSwrCtx, "out_sample_fmt", c->sample_fmt, 0);
 
 	/* initialize the resampling context */
-	if((Ret = swr_init(m_AudioStream.pSwrCtx)) < 0)
+	if(swr_init(m_AudioStream.pSwrCtx) < 0)
 	{
 		dbg_msg("video_recorder", "Failed to initialize the resampling context");
 		return false;

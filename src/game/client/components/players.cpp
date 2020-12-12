@@ -146,7 +146,6 @@ void CPlayers::RenderHook(
 
 			s_HookChainRenderInfo[HookChainCount].m_Scale = 1;
 			s_HookChainRenderInfo[HookChainCount].m_Rotation = GetAngle(Dir) + pi;
-			++HookChainCount;
 		}
 		Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteHookChain);
 		Graphics()->RenderQuadContainerAsSpriteMultiple(m_WeaponEmoteQuadContainerIndex, QuadOffset, HookChainCount, s_HookChainRenderInfo);
@@ -435,8 +434,16 @@ void CPlayers::RenderPlayer(
 						Dir = vec2(pPlayerChar->m_X, pPlayerChar->m_Y) - vec2(pPrevChar->m_X, pPrevChar->m_Y);
 					else
 						Dir = vec2(m_pClient->m_Snap.m_aCharacters[ClientID].m_Cur.m_X, m_pClient->m_Snap.m_aCharacters[ClientID].m_Cur.m_Y) - vec2(m_pClient->m_Snap.m_aCharacters[ClientID].m_Prev.m_X, m_pClient->m_Snap.m_aCharacters[ClientID].m_Prev.m_Y);
-					Dir = normalize(Dir);
-					float HadOkenAngle = GetAngle(Dir);
+					float HadOkenAngle = 0;
+					if(absolute(Dir.x) > 0.0001f || absolute(Dir.y) > 0.0001f)
+					{
+						Dir = normalize(Dir);
+						HadOkenAngle = GetAngle(Dir);
+					}
+					else
+					{
+						Dir = vec2(1, 0);
+					}
 					Graphics()->QuadsSetRotation(HadOkenAngle);
 					int QuadOffset = IteX * 2;
 					vec2 DirY(-Dir.y, Dir.x);
@@ -646,6 +653,7 @@ void CPlayers::OnRender()
 				m_aRenderInfo[i].m_OriginalRenderSkin = pSkin->m_OriginalSkin;
 				m_aRenderInfo[i].m_ColorableRenderSkin = pSkin->m_ColorableSkin;
 				m_aRenderInfo[i].m_BloodColor = pSkin->m_BloodColor;
+				m_aRenderInfo[i].m_SkinMetrics = pSkin->m_Metrics;
 				m_aRenderInfo[i].m_CustomColoredSkin = IsTeamplay;
 				if(!IsTeamplay)
 				{
@@ -660,6 +668,7 @@ void CPlayers::OnRender()
 	m_RenderInfoSpec.m_OriginalRenderSkin = pSkin->m_OriginalSkin;
 	m_RenderInfoSpec.m_ColorableRenderSkin = pSkin->m_ColorableSkin;
 	m_RenderInfoSpec.m_BloodColor = pSkin->m_BloodColor;
+	m_RenderInfoSpec.m_SkinMetrics = pSkin->m_Metrics;
 	m_RenderInfoSpec.m_CustomColoredSkin = false;
 	m_RenderInfoSpec.m_Size = 64.0f;
 
@@ -758,18 +767,29 @@ void CPlayers::OnInit()
 		{
 			if(g_pData->m_Weapons.m_aId[i].m_aSpriteMuzzles[n])
 			{
-				RenderTools()->GetSpriteScale(g_pData->m_Weapons.m_aId[i].m_aSpriteMuzzles[n], ScaleX, ScaleY);
+				if(i == WEAPON_GUN || i == WEAPON_SHOTGUN)
+				{
+					// TODO: hardcoded for now to get the same particle size as before
+					RenderTools()->GetSpriteScaleImpl(96, 64, ScaleX, ScaleY);
+				}
+				else
+					RenderTools()->GetSpriteScale(g_pData->m_Weapons.m_aId[i].m_aSpriteMuzzles[n], ScaleX, ScaleY);
 			}
+
+			float SWidth = (g_pData->m_Weapons.m_aId[i].m_VisualSize * ScaleX) * (4.0f / 3.0f);
+			float SHeight = g_pData->m_Weapons.m_aId[i].m_VisualSize * ScaleY;
+
+			Graphics()->QuadsSetSubset(0, 0, 1, 1);
 			if(WEAPON_NINJA == i)
 				RenderTools()->QuadContainerAddSprite(m_WeaponSpriteMuzzleQuadContainerIndex[i], 160.f * ScaleX, 160.f * ScaleY);
 			else
-				RenderTools()->QuadContainerAddSprite(m_WeaponSpriteMuzzleQuadContainerIndex[i], g_pData->m_Weapons.m_aId[i].m_VisualSize * ScaleX, g_pData->m_Weapons.m_aId[i].m_VisualSize * ScaleY);
+				RenderTools()->QuadContainerAddSprite(m_WeaponSpriteMuzzleQuadContainerIndex[i], SWidth, SHeight);
 
 			Graphics()->QuadsSetSubset(0, 1, 1, 0);
 			if(WEAPON_NINJA == i)
 				RenderTools()->QuadContainerAddSprite(m_WeaponSpriteMuzzleQuadContainerIndex[i], 160.f * ScaleX, 160.f * ScaleY);
 			else
-				RenderTools()->QuadContainerAddSprite(m_WeaponSpriteMuzzleQuadContainerIndex[i], g_pData->m_Weapons.m_aId[i].m_VisualSize * ScaleX, g_pData->m_Weapons.m_aId[i].m_VisualSize * ScaleY);
+				RenderTools()->QuadContainerAddSprite(m_WeaponSpriteMuzzleQuadContainerIndex[i], SWidth, SHeight);
 		}
 	}
 

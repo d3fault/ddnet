@@ -601,7 +601,7 @@ void CMapLayers::OnMapLoad()
 
 						if(!DoTextureCoords)
 						{
-							tmpTiles.reserve((size_t)(pTMap->m_Width * pTMap->m_Height));
+							tmpTiles.reserve((size_t)pTMap->m_Width * pTMap->m_Height);
 							tmpBorderTopTiles.reserve((size_t)pTMap->m_Width);
 							tmpBorderBottomTiles.reserve((size_t)pTMap->m_Width);
 							tmpBorderLeftTiles.reserve((size_t)pTMap->m_Height);
@@ -610,7 +610,7 @@ void CMapLayers::OnMapLoad()
 						}
 						else
 						{
-							tmpTileTexCoords.reserve((size_t)(pTMap->m_Width * pTMap->m_Height));
+							tmpTileTexCoords.reserve((size_t)pTMap->m_Width * pTMap->m_Height);
 							tmpBorderTopTilesTexCoords.reserve((size_t)pTMap->m_Width);
 							tmpBorderBottomTilesTexCoords.reserve((size_t)pTMap->m_Width);
 							tmpBorderLeftTilesTexCoords.reserve((size_t)pTMap->m_Height);
@@ -836,7 +836,7 @@ void CMapLayers::OnMapLoad()
 						size_t UploadDataSize = tmpTileTexCoords.size() * sizeof(SGraphicTileTexureCoords) + tmpTiles.size() * sizeof(SGraphicTile);
 						if(UploadDataSize > 0)
 						{
-							char *pUploadData = new char[UploadDataSize];
+							char *pUploadData = (char *)malloc(sizeof(char) * UploadDataSize);
 
 							mem_copy_special(pUploadData, pTmpTiles, sizeof(vec2), tmpTiles.size() * 4, (DoTextureCoords ? sizeof(vec3) : 0));
 							if(DoTextureCoords)
@@ -845,8 +845,7 @@ void CMapLayers::OnMapLoad()
 							}
 
 							// first create the buffer object
-							int BufferObjectIndex = Graphics()->CreateBufferObject(UploadDataSize, pUploadData);
-							delete[] pUploadData;
+							int BufferObjectIndex = Graphics()->CreateBufferObject(UploadDataSize, pUploadData, true);
 
 							// then create the buffer container
 							SBufferContainerInfo ContainerInfo;

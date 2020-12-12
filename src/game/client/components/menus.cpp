@@ -42,6 +42,8 @@
 #include "menus.h"
 #include "skins.h"
 
+#include <limits>
+
 ColorRGBA CMenus::ms_GuiColor;
 ColorRGBA CMenus::ms_ColorTabbarInactiveOutgame;
 ColorRGBA CMenus::ms_ColorTabbarActiveOutgame;
@@ -99,10 +101,10 @@ CMenus::CMenus()
 float CMenus::ButtonColorMul(const void *pID)
 {
 	if(UI()->ActiveItem() == pID)
-		return 0.5f;
+		return ButtonColorMulActive();
 	else if(UI()->HotItem() == pID)
-		return 1.5f;
-	return 1;
+		return ButtonColorMulHot();
+	return ButtonColorMulDefault();
 }
 
 int CMenus::DoButton_Icon(int ImageId, int SpriteId, const CUIRect *pRect)
@@ -351,7 +353,7 @@ int CMenus::DoEditBox(void *pID, const CUIRect *pRect, char *pStr, unsigned StrS
 
 			for(int i = 1; i <= Len; i++)
 			{
-				if(TextRender()->TextWidth(0, FontSize, pStr, i, -1.0f) - *Offset > MxRel)
+				if(TextRender()->TextWidth(0, FontSize, pStr, i, std::numeric_limits<float>::max()) - *Offset > MxRel)
 				{
 					s_AtIndex = i - 1;
 					break;
@@ -422,12 +424,6 @@ int CMenus::DoEditBox(void *pID, const CUIRect *pRect, char *pStr, unsigned StrS
 	const char *pDisplayStr = pStr;
 	char aStars[128];
 
-	if(pDisplayStr[0] == '\0')
-	{
-		pDisplayStr = pEmptyText;
-		TextRender()->TextColor(1, 1, 1, 0.75f);
-	}
-
 	if(Hidden)
 	{
 		unsigned s = str_length(pDisplayStr);
@@ -439,43 +435,55 @@ int CMenus::DoEditBox(void *pID, const CUIRect *pRect, char *pStr, unsigned StrS
 		pDisplayStr = aStars;
 	}
 
-	char aInputing[32] = {0};
-	if(UI()->HotItem() == pID && Input()->GetIMEState())
+	char aDispEditingText[128 + IInput::INPUT_TEXT_SIZE + 2] = {0};
+	int DispCursorPos = s_AtIndex;
+	if(UI()->LastActiveItem() == pID && Input()->GetIMEEditingTextLength() > -1)
 	{
-		str_copy(aInputing, pStr, sizeof(aInputing));
-		const char *Text = Input()->GetIMECandidate();
-		if(str_length(Text))
+		int EditingTextCursor = Input()->GetEditingCursor();
+		str_copy(aDispEditingText, pDisplayStr, sizeof(aDispEditingText));
+		char aEditingText[IInput::INPUT_TEXT_SIZE + 2];
+		if(Hidden)
 		{
-			int NewTextLen = str_length(Text);
-			int CharsLeft = StrSize - str_length(aInputing) - 1;
-			int FillCharLen = minimum(NewTextLen, CharsLeft);
-			//Push Char Backward
-			for(int i = str_length(aInputing); i >= s_AtIndex; i--)
-				aInputing[i + FillCharLen] = aInputing[i];
-			for(int i = 0; i < FillCharLen; i++)
-			{
-				if(Text[i] == '\n')
-					aInputing[s_AtIndex + i] = ' ';
-				else
-					aInputing[s_AtIndex + i] = Text[i];
-			}
-			//s_AtIndex = s_AtIndex+FillCharLen;
-			pDisplayStr = aInputing;
+			// Do not show editing text in password field
+			str_copy(aEditingText, "[*]", sizeof(aEditingText));
+			EditingTextCursor = 1;
 		}
+		else
+		{
+			str_format(aEditingText, sizeof(aEditingText), "[%s]", Input()->GetIMEEditingText());
+		}
+		int NewTextLen = str_length(aEditingText);
+		int CharsLeft = (int)sizeof(aDispEditingText) - str_length(aDispEditingText) - 1;
+		int FillCharLen = minimum(NewTextLen, CharsLeft);
+		for(int i = str_length(aDispEditingText) - 1; i >= s_AtIndex; i--)
+			aDispEditingText[i + FillCharLen] = aDispEditingText[i];
+		for(int i = 0; i < FillCharLen; i++)
+			aDispEditingText[s_AtIndex + i] = aEditingText[i];
+		DispCursorPos = s_AtIndex + EditingTextCursor + 1;
+		pDisplayStr = aDispEditingText;
+		UpdateOffset = true;
 	}
+
+	if(pDisplayStr[0] == '\0')
+	{
+		pDisplayStr = pEmptyText;
+		TextRender()->TextColor(1, 1, 1, 0.75f);
+	}
+
+	DispCursorPos = minimum(DispCursorPos, str_length(pDisplayStr));
 
 	// check if the text has to be moved
 	if(UI()->LastActiveItem() == pID && !JustGotActive && (UpdateOffset || m_NumInputEvents))
 	{
-		float w = TextRender()->TextWidth(0, FontSize, pDisplayStr, s_AtIndex, -1.0f);
+		float w = TextRender()->TextWidth(0, FontSize, pDisplayStr, DispCursorPos, std::numeric_limits<float>::max());
 		if(w - *Offset > Textbox.w)
 		{
 			// move to the left
-			float wt = TextRender()->TextWidth(0, FontSize, pDisplayStr, -1, -1.0f);
+			float wt = TextRender()->TextWidth(0, FontSize, pDisplayStr, -1, std::numeric_limits<float>::max());
 			do
 			{
 				*Offset += minimum(wt - *Offset - Textbox.w, Textbox.w / 3);
-			} while(w - *Offset > Textbox.w);
+			} while(w - *Offset > Textbox.w + 0.0001f);
 		}
 		else if(w - *Offset < 0.0f)
 		{
@@ -483,7 +491,7 @@ int CMenus::DoEditBox(void *pID, const CUIRect *pRect, char *pStr, unsigned StrS
 			do
 			{
 				*Offset = maximum(0.0f, *Offset - Textbox.w / 3);
-			} while(w - *Offset < 0.0f);
+			} while(w - *Offset < -0.0001f);
 		}
 	}
 	UI()->ClipEnable(pRect);
@@ -493,25 +501,28 @@ int CMenus::DoEditBox(void *pID, const CUIRect *pRect, char *pStr, unsigned StrS
 
 	TextRender()->TextColor(1, 1, 1, 1);
 
+	float ScreenX0, ScreenY0, ScreenX1, ScreenY1;
+	Graphics()->GetScreen(&ScreenX0, &ScreenY0, &ScreenX1, &ScreenY1);
+	float OnePixelWidth = ((ScreenX1 - ScreenX0) / Graphics()->ScreenWidth());
+
 	// render the cursor
 	if(UI()->LastActiveItem() == pID && !JustGotActive)
 	{
-		if(str_length(aInputing))
+		float w = TextRender()->TextWidth(0, FontSize, pDisplayStr, DispCursorPos, std::numeric_limits<float>::max());
+		Textbox.x += w;
+
+		if((2 * time_get() / time_freq()) % 2)
 		{
-			float w = TextRender()->TextWidth(0, FontSize, pDisplayStr, s_AtIndex + Input()->GetEditingCursor(), -1.0f);
-			Textbox = *pRect;
-			Textbox.VSplitLeft(2.0f, 0, &Textbox);
-			Textbox.x += (w - *Offset - TextRender()->TextWidth(0, FontSize, "|", -1, -1.0f) / 2);
-
-			UI()->DoLabel(&Textbox, "|", FontSize, -1);
+			Graphics()->TextureClear();
+			Graphics()->QuadsBegin();
+			Graphics()->SetColor(0, 0, 0, 0.3f);
+			IGraphics::CQuadItem CursorTBack(Textbox.x - (OnePixelWidth * 2.0f) / 2.0f, Textbox.y, OnePixelWidth * 2 * 2.0f, Textbox.h);
+			Graphics()->QuadsDrawTL(&CursorTBack, 1);
+			Graphics()->SetColor(1, 1, 1, 1);
+			IGraphics::CQuadItem CursorT(Textbox.x, Textbox.y + OnePixelWidth * 1.5f, OnePixelWidth * 2.0f, Textbox.h - OnePixelWidth * 1.5f * 2);
+			Graphics()->QuadsDrawTL(&CursorT, 1);
+			Graphics()->QuadsEnd();
 		}
-		float w = TextRender()->TextWidth(0, FontSize, pDisplayStr, s_AtIndex, -1.0f);
-		Textbox = *pRect;
-		Textbox.VSplitLeft(2.0f, 0, &Textbox);
-		Textbox.x += (w - *Offset - TextRender()->TextWidth(0, FontSize, "|", -1, -1.0f) / 2);
-
-		if((2 * time_get() / time_freq()) % 2) // make it blink
-			UI()->DoLabel(&Textbox, "|", FontSize, -1);
 
 		Input()->SetEditingPosition(Textbox.x, Textbox.y + FontSize);
 	}
@@ -1080,6 +1091,9 @@ void CMenus::OnInit()
 	if(g_Config.m_ClSkipStartMenu)
 		m_ShowStart = false;
 
+	m_RefreshButton.Init(UI());
+	m_ConnectButton.Init(UI());
+
 	Console()->Chain("add_favorite", ConchainServerbrowserUpdate, this);
 	Console()->Chain("remove_favorite", ConchainServerbrowserUpdate, this);
 	Console()->Chain("add_friend", ConchainFriendlistUpdate, this);
@@ -1408,9 +1422,27 @@ int CMenus::Render()
 				Localize("Most importantly communication is key: There is no tutorial so you'll have to chat (t key) with other players to learn the basics and tricks of the game."),
 				Localize("Use k key to kill (restart), q to pause and watch other players. See settings for other key binds."),
 				Localize("It's recommended that you check the settings to adjust them to your liking before joining a server."),
-				Localize("Please enter your nick name below."));
+				Localize("Please enter your nickname below."));
 			pExtraText = aBuf;
 			pButtonText = Localize("Ok");
+			ExtraAlign = -1;
+		}
+		else if(m_Popup == POPUP_POINTS)
+		{
+			pTitle = Localize("Existing Player");
+			if(Client()->m_Points > 50)
+			{
+				str_format(aBuf, sizeof(aBuf), Localize("Your nickname '%s' is already used (%d points). Do you still want to use it?"), Client()->PlayerName(), Client()->m_Points);
+				pExtraText = aBuf;
+			}
+			else if(Client()->m_Points >= 0)
+			{
+				m_Popup = POPUP_NONE;
+			}
+			else
+			{
+				pExtraText = Localize("Checking for existing player with your name");
+			}
 			ExtraAlign = -1;
 		}
 		else if(m_Popup == POPUP_WARNING)
@@ -1576,7 +1608,7 @@ int CMenus::Render()
 			Part.VMargin(120.0f, &Part);
 
 			static int s_Button = 0;
-			if(DoButton_Menu(&s_Button, pButtonText, 0, &Part) || m_EscapePressed || m_EnterPressed)
+			if(DoButton_Menu(&s_Button, pButtonText, 0, &Part) || m_EscapePressed || (m_EnterPressed && m_Popup != POPUP_CONNECTING))
 			{
 				Client()->Disconnect();
 				m_Popup = POPUP_NONE;
@@ -1997,7 +2029,12 @@ int CMenus::Render()
 			if(DoButton_Menu(&s_EnterButton, Localize("Enter"), 0, &Part) || m_EnterPressed)
 			{
 				Client()->RequestDDNetInfo();
-				m_Popup = POPUP_NONE;
+				if(g_Config.m_BrIndicateFinished)
+					m_Popup = POPUP_POINTS;
+				else
+				{
+					m_Popup = POPUP_NONE;
+				}
 			}
 
 			Box.HSplitBottom(20.f, &Box, &Part);
@@ -2022,6 +2059,27 @@ int CMenus::Render()
 			UI()->DoLabel(&Label, Localize("Nickname"), 16.0f, -1);
 			static float Offset = 0.0f;
 			DoEditBox(&g_Config.m_PlayerName, &TextBox, g_Config.m_PlayerName, sizeof(g_Config.m_PlayerName), 12.0f, &Offset, false, CUI::CORNER_ALL, Client()->PlayerName());
+		}
+		else if(m_Popup == POPUP_POINTS)
+		{
+			CUIRect Yes, No;
+
+			Box.HSplitBottom(20.f, &Box, &Part);
+			Box.HSplitBottom(24.f, &Box, &Part);
+			Part.VMargin(80.0f, &Part);
+
+			Part.VSplitMid(&No, &Yes);
+
+			Yes.VMargin(20.0f, &Yes);
+			No.VMargin(20.0f, &No);
+
+			static int s_ButtonNo = 0;
+			if(DoButton_Menu(&s_ButtonNo, Localize("No"), 0, &No) || m_EscapePressed)
+				m_Popup = POPUP_FIRST_LAUNCH;
+
+			static int s_ButtonYes = 0;
+			if(DoButton_Menu(&s_ButtonYes, Localize("Yes"), 0, &Yes) || m_EnterPressed)
+				m_Popup = POPUP_NONE;
 		}
 		else if(m_Popup == POPUP_WARNING)
 		{
@@ -2561,7 +2619,7 @@ int CMenus::MenuImageScan(const char *pName, int IsDir, int DirType, void *pUser
 	*/
 
 	MenuImage.m_GreyTexture = pSelf->Graphics()->LoadTextureRaw(Info.m_Width, Info.m_Height, Info.m_Format, Info.m_pData, Info.m_Format, 0);
-	free(Info.m_pData);
+	pSelf->Graphics()->FreePNG(&Info);
 
 	// set menu image data
 	str_truncate(MenuImage.m_aName, sizeof(MenuImage.m_aName), pName, str_length(pName) - 4);
@@ -2586,4 +2644,68 @@ void CMenus::SetMenuPage(int NewPage)
 	m_MenuPage = NewPage;
 	if(NewPage >= PAGE_INTERNET && NewPage <= PAGE_KOG)
 		g_Config.m_UiPage = NewPage;
+}
+
+bool CMenus::HandleListInputs(const CUIRect &View, float &ScrollValue, const float ScrollAmount, int *pScrollOffset, const float ElemHeight, int &SelectedIndex, const int NumElems)
+{
+	int NewIndex = -1;
+	int Num = (int)(View.h / ElemHeight) + 1;
+	int ScrollNum = maximum(NumElems - Num + 1, 0);
+	if(ScrollNum > 0)
+	{
+		if(pScrollOffset && *pScrollOffset >= 0)
+		{
+			ScrollValue = (float)(*pScrollOffset) / ScrollNum;
+			*pScrollOffset = -1;
+		}
+		if(Input()->KeyPress(KEY_MOUSE_WHEEL_UP) && UI()->MouseInside(&View))
+			ScrollValue -= 3.0f / ScrollNum;
+		if(Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) && UI()->MouseInside(&View))
+			ScrollValue += 3.0f / ScrollNum;
+	}
+
+	ScrollValue = clamp(ScrollValue, 0.0f, 1.0f);
+	SelectedIndex = clamp(SelectedIndex, 0, NumElems);
+
+	for(int i = 0; i < m_NumInputEvents; i++)
+	{
+		if(m_aInputEvents[i].m_Flags & IInput::FLAG_PRESS)
+		{
+			if(m_aInputEvents[i].m_Key == KEY_DOWN)
+				NewIndex = minimum(SelectedIndex + 1, NumElems - 1);
+			else if(m_aInputEvents[i].m_Key == KEY_UP)
+				NewIndex = maximum(SelectedIndex - 1, 0);
+			else if(m_aInputEvents[i].m_Key == KEY_PAGEUP)
+				NewIndex = maximum(SelectedIndex - 25, 0);
+			else if(m_aInputEvents[i].m_Key == KEY_PAGEDOWN)
+				NewIndex = minimum(SelectedIndex + 25, NumElems - 1);
+			else if(m_aInputEvents[i].m_Key == KEY_HOME)
+				NewIndex = 0;
+			else if(m_aInputEvents[i].m_Key == KEY_END)
+				NewIndex = NumElems - 1;
+		}
+		if(NewIndex > -1 && NewIndex < NumElems)
+		{
+			//scroll
+			float IndexY = View.y - ScrollValue * ScrollNum * ElemHeight + NewIndex * ElemHeight;
+			int Scroll = View.y > IndexY ? -1 : View.y + View.h < IndexY + ElemHeight ? 1 : 0;
+			if(Scroll)
+			{
+				if(Scroll < 0)
+				{
+					int NumScrolls = (View.y - IndexY + ElemHeight - 1.0f) / ElemHeight;
+					ScrollValue -= (1.0f / ScrollNum) * NumScrolls;
+				}
+				else
+				{
+					int NumScrolls = (IndexY + ElemHeight - (View.y + View.h) + ElemHeight - 1.0f) / ElemHeight;
+					ScrollValue += (1.0f / ScrollNum) * NumScrolls;
+				}
+			}
+
+			SelectedIndex = NewIndex;
+		}
+	}
+
+	return NewIndex != -1;
 }

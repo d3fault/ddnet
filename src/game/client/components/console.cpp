@@ -180,7 +180,6 @@ void CGameConsole::CInstance::OnInput(IInput::CEvent Event)
 			}
 			int max = minimum(i - Begin + 1, (int)sizeof(Line));
 			str_copy(Line, Text + Begin, max);
-			Begin = i + 1;
 			m_Input.Add(Line);
 		}
 	}
@@ -581,9 +580,9 @@ void CGameConsole::OnRender()
 		int EditingCursor = Input()->GetEditingCursor();
 		if(Input()->GetIMEState())
 		{
-			if(str_length(Input()->GetIMECandidate()))
+			if(str_length(Input()->GetIMEEditingText()))
 			{
-				pConsole->m_Input.Editing(Input()->GetIMECandidate(), EditingCursor);
+				pConsole->m_Input.Editing(Input()->GetIMEEditingText(), EditingCursor);
 				Editing = true;
 			}
 		}

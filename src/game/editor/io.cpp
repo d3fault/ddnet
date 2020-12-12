@@ -270,7 +270,8 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 				Size += str_length(m_lSettings[i].m_aCommand) + 1;
 			}
 
-			char *pSettings = (char *)malloc(Size);
+			// Checked that m_lSettings.size() is not 0, thus Size is > 0 as ell
+			char *pSettings = (char *)malloc(Size); // NOLINT(clang-analyzer-optin.portability.UnixAPI)
 			char *pNext = pSettings;
 			for(int i = 0; i < m_lSettings.size(); i++)
 			{
@@ -336,18 +337,10 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 		CMapItemSound Item;
 		Item.m_Version = 1;
 
-		Item.m_External = pSound->m_External;
+		Item.m_External = 0;
 		Item.m_SoundName = df.AddData(str_length(pSound->m_aName) + 1, pSound->m_aName);
-		if(pSound->m_External)
-		{
-			Item.m_SoundDataSize = 0;
-			Item.m_SoundData = -1;
-		}
-		else
-		{
-			Item.m_SoundData = df.AddData(pSound->m_DataSize, pSound->m_pData);
-			Item.m_SoundDataSize = pSound->m_DataSize;
-		}
+		Item.m_SoundData = df.AddData(pSound->m_DataSize, pSound->m_pData);
+		Item.m_SoundDataSize = pSound->m_DataSize;
 
 		df.AddItem(MAPITEMTYPE_SOUND, i, sizeof(Item), &Item);
 	}
@@ -387,7 +380,7 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 				CMapItemLayerTilemap Item;
 				Item.m_Version = 3;
 
-				Item.m_Layer.m_Version = 1; // was previously uninitialized, do not rely on it being 1
+				Item.m_Layer.m_Version = 0; // was previously uninitialized, do not rely on it being 0
 				Item.m_Layer.m_Flags = pLayer->m_Flags;
 				Item.m_Layer.m_Type = pLayer->m_Type;
 
@@ -475,7 +468,7 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 				{
 					CMapItemLayerQuads Item;
 					Item.m_Version = 2;
-					Item.m_Layer.m_Version = 1; // was previously uninitialized, do not rely on it being 1
+					Item.m_Layer.m_Version = 0; // was previously uninitialized, do not rely on it being 0
 					Item.m_Layer.m_Flags = pLayer->m_Flags;
 					Item.m_Layer.m_Type = pLayer->m_Type;
 					Item.m_Image = pLayer->m_Image;
@@ -504,7 +497,7 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 				{
 					CMapItemLayerSounds Item;
 					Item.m_Version = CMapItemLayerSounds::CURRENT_VERSION;
-					Item.m_Layer.m_Version = 1; // was previously uninitialized, do not rely on it being 1
+					Item.m_Layer.m_Version = 0; // was previously uninitialized, do not rely on it being 0
 					Item.m_Layer.m_Flags = pLayer->m_Flags;
 					Item.m_Layer.m_Type = pLayer->m_Type;
 					Item.m_Sound = pLayer->m_Sound;
@@ -542,20 +535,23 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 		PointCount += Item.m_NumPoints;
 	}
 
-	// save points
-	int TotalSize = sizeof(CEnvPoint) * PointCount;
-	CEnvPoint *pPoints = (CEnvPoint *)calloc(PointCount, sizeof(*pPoints));
-	PointCount = 0;
-
-	for(int e = 0; e < m_lEnvelopes.size(); e++)
+	if(PointCount > 0)
 	{
-		int Count = m_lEnvelopes[e]->m_lPoints.size();
-		mem_copy(&pPoints[PointCount], m_lEnvelopes[e]->m_lPoints.base_ptr(), sizeof(CEnvPoint) * Count);
-		PointCount += Count;
-	}
+		// save points
+		int TotalSize = sizeof(CEnvPoint) * PointCount;
+		CEnvPoint *pPoints = (CEnvPoint *)calloc(PointCount, sizeof(*pPoints));
+		PointCount = 0;
 
-	df.AddItem(MAPITEMTYPE_ENVPOINTS, 0, TotalSize, pPoints);
-	free(pPoints);
+		for(int e = 0; e < m_lEnvelopes.size(); e++)
+		{
+			int Count = m_lEnvelopes[e]->m_lPoints.size();
+			mem_copy(&pPoints[PointCount], m_lEnvelopes[e]->m_lPoints.base_ptr(), sizeof(CEnvPoint) * Count);
+			PointCount += Count;
+		}
+
+		df.AddItem(MAPITEMTYPE_ENVPOINTS, 0, TotalSize, pPoints);
+		free(pPoints);
+	}
 
 	// finish the data file
 	df.Finish();
@@ -738,7 +734,6 @@ int CEditorMap::Load(class IStorage *pStorage, const char *pFileName, int Storag
 
 				// copy base info
 				CEditorSound *pSound = new CEditorSound(m_pEditor);
-				pSound->m_External = pItem->m_External;
 
 				if(pItem->m_External)
 				{
@@ -920,10 +915,10 @@ int CEditorMap::Load(class IStorage *pStorage, const char *pFileName, int Storag
 								for(int i = 0; i < pTiles->m_Width * pTiles->m_Height; i++)
 								{
 									pTiles->m_pTiles[i].m_Index = 0;
-									for(unsigned e = 0; e < sizeof(s_aTilesRep) / sizeof(s_aTilesRep[0]); e++)
+									for(int TilesRep : s_aTilesRep)
 									{
-										if(((CLayerTele *)pTiles)->m_pTeleTile[i].m_Type == s_aTilesRep[e])
-											pTiles->m_pTiles[i].m_Index = s_aTilesRep[e];
+										if(((CLayerTele *)pTiles)->m_pTeleTile[i].m_Type == TilesRep)
+											pTiles->m_pTiles[i].m_Index = TilesRep;
 									}
 								}
 							}
@@ -993,11 +988,11 @@ int CEditorMap::Load(class IStorage *pStorage, const char *pFileName, int Storag
 										continue;
 									}
 
-									for(unsigned e = 0; e < sizeof(s_aTilesComp) / sizeof(s_aTilesComp[0]); e++)
+									for(int TilesComp : s_aTilesComp)
 									{
-										if(pLayerSwitchTiles[i].m_Type == s_aTilesComp[e])
+										if(pLayerSwitchTiles[i].m_Type == TilesComp)
 										{
-											pTiles->m_pTiles[i].m_Index = s_aTilesComp[e];
+											pTiles->m_pTiles[i].m_Index = TilesComp;
 											pTiles->m_pTiles[i].m_Flags = pLayerSwitchTiles[i].m_Flags;
 										}
 									}

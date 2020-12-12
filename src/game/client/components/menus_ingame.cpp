@@ -248,12 +248,12 @@ void CMenus::RenderPlayers(CUIRect MainView)
 
 	int TotalPlayers = 0;
 
-	for(int i = 0; i < MAX_CLIENTS; ++i)
+	for(auto &pInfoByName : m_pClient->m_Snap.m_paInfoByName)
 	{
-		if(!m_pClient->m_Snap.m_paInfoByName[i])
+		if(!pInfoByName)
 			continue;
 
-		int Index = m_pClient->m_Snap.m_paInfoByName[i]->m_ClientID;
+		int Index = pInfoByName->m_ClientID;
 
 		if(Index == m_pClient->m_Snap.m_LocalClientID)
 			continue;
@@ -530,7 +530,7 @@ bool CMenus::RenderServerControlServer(CUIRect MainView)
 		TotalShown++;
 	}
 
-	UiDoListboxStart(&s_VoteList, &List, 24.0f, "", "", TotalShown, 1, s_CurVoteOption, s_ScrollValue);
+	UiDoListboxStart(&s_VoteList, &List, 19.0f, "", "", TotalShown, 1, s_CurVoteOption, s_ScrollValue);
 
 	int i = -1;
 	for(CVoteOptionClient *pOption = m_pClient->m_pVoting->m_pFirst; pOption; pOption = pOption->m_pNext)
@@ -542,7 +542,7 @@ bool CMenus::RenderServerControlServer(CUIRect MainView)
 		CListboxItem Item = UiDoListboxNextItem(pOption);
 
 		if(Item.m_Visible)
-			UI()->DoLabelScaled(&Item.m_Rect, pOption->m_aDescription, 16.0f, -1);
+			UI()->DoLabelScaled(&Item.m_Rect, pOption->m_aDescription, 13.0f, -1);
 
 		if(NumVoteOptions < Total)
 			aIndices[NumVoteOptions] = i;
@@ -559,15 +559,15 @@ bool CMenus::RenderServerControlServer(CUIRect MainView)
 bool CMenus::RenderServerControlKick(CUIRect MainView, bool FilterSpectators)
 {
 	int NumOptions = 0;
-	int Selected = -1;
+	int Selected = 0;
 	static int aPlayerIDs[MAX_CLIENTS];
-	for(int i = 0; i < MAX_CLIENTS; i++)
+	for(auto &pInfoByName : m_pClient->m_Snap.m_paInfoByName)
 	{
-		if(!m_pClient->m_Snap.m_paInfoByName[i])
+		if(!pInfoByName)
 			continue;
 
-		int Index = m_pClient->m_Snap.m_paInfoByName[i]->m_ClientID;
-		if(Index == m_pClient->m_Snap.m_LocalClientID || (FilterSpectators && m_pClient->m_Snap.m_paInfoByName[i]->m_Team == TEAM_SPECTATORS))
+		int Index = pInfoByName->m_ClientID;
+		if(Index == m_pClient->m_Snap.m_LocalClientID || (FilterSpectators && pInfoByName->m_Team == TEAM_SPECTATORS))
 			continue;
 
 		if(!str_find_nocase(m_pClient->m_aClients[Index].m_aName, m_aFilterString))
@@ -608,13 +608,15 @@ void CMenus::RenderServerControl(CUIRect MainView)
 	static int s_ControlPage = 0;
 
 	// render background
-	CUIRect Bottom, Extended, TabBar, Button;
+	CUIRect Bottom, RconExtension, TabBar, Button;
 	MainView.HSplitTop(20.0f, &Bottom, &MainView);
 	RenderTools()->DrawUIRect(&Bottom, ms_ColorTabbarActive, 0, 10.0f);
 	MainView.HSplitTop(20.0f, &TabBar, &MainView);
 	RenderTools()->DrawUIRect(&MainView, ms_ColorTabbarActive, CUI::CORNER_B, 10.0f);
 	MainView.Margin(10.0f, &MainView);
-	MainView.HSplitBottom(90.0f, &MainView, &Extended);
+
+	if(Client()->RconAuthed())
+		MainView.HSplitBottom(90.0f, &MainView, &RconExtension);
 
 	// tab bar
 	{
@@ -723,13 +725,14 @@ void CMenus::RenderServerControl(CUIRect MainView)
 		if(Client()->RconAuthed())
 		{
 			// background
-			Extended.Margin(10.0f, &Extended);
-			Extended.HSplitTop(20.0f, &Bottom, &Extended);
-			Extended.HSplitTop(5.0f, 0, &Extended);
+			RconExtension.Margin(10.0f, &RconExtension);
+			RconExtension.HSplitTop(20.0f, &Bottom, &RconExtension);
+			RconExtension.HSplitTop(5.0f, 0, &RconExtension);
 
 			// force vote
 			Bottom.VSplitLeft(5.0f, 0, &Bottom);
 			Bottom.VSplitLeft(120.0f, &Button, &Bottom);
+
 			static int s_ForceVoteButton = 0;
 			if(DoButton_Menu(&s_ForceVoteButton, Localize("Force vote"), 0, &Button))
 			{
@@ -766,7 +769,7 @@ void CMenus::RenderServerControl(CUIRect MainView)
 					m_pClient->m_pVoting->RemovevoteOption(m_CallvoteSelectedOption);
 
 				// add vote
-				Extended.HSplitTop(20.0f, &Bottom, &Extended);
+				RconExtension.HSplitTop(20.0f, &Bottom, &RconExtension);
 				Bottom.VSplitLeft(5.0f, 0, &Bottom);
 				Bottom.VSplitLeft(250.0f, &Button, &Bottom);
 				UI()->DoLabelScaled(&Button, Localize("Vote description:"), 14.0f, -1);
@@ -776,7 +779,7 @@ void CMenus::RenderServerControl(CUIRect MainView)
 
 				static char s_aVoteDescription[64] = {0};
 				static char s_aVoteCommand[512] = {0};
-				Extended.HSplitTop(20.0f, &Bottom, &Extended);
+				RconExtension.HSplitTop(20.0f, &Bottom, &RconExtension);
 				Bottom.VSplitRight(10.0f, &Bottom, 0);
 				Bottom.VSplitRight(120.0f, &Bottom, &Button);
 				static int s_AddVoteButton = 0;
@@ -882,14 +885,14 @@ int CMenus::GhostlistFetchCallback(const char *pName, int IsDir, int StorageType
 	char aFilename[256];
 	str_format(aFilename, sizeof(aFilename), "%s/%s", pSelf->m_pClient->m_pGhost->GetGhostDir(), pName);
 
-	CGhostHeader Header;
-	if(!pSelf->m_pClient->m_pGhost->GhostLoader()->GetGhostInfo(aFilename, &Header, pMap, pSelf->Client()->GetMapCrc()))
+	CGhostInfo Info;
+	if(!pSelf->m_pClient->m_pGhost->GhostLoader()->GetGhostInfo(aFilename, &Info, pMap, pSelf->Client()->GetCurrentMapSha256(), pSelf->Client()->GetCurrentMapCrc()))
 		return 0;
 
 	CGhostItem Item;
 	str_copy(Item.m_aFilename, aFilename, sizeof(Item.m_aFilename));
-	str_copy(Item.m_aPlayer, Header.m_aOwner, sizeof(Item.m_aPlayer));
-	Item.m_Time = Header.GetTime();
+	str_copy(Item.m_aPlayer, Info.m_aOwner, sizeof(Item.m_aPlayer));
+	Item.m_Time = Info.m_Time;
 	if(Item.m_Time > 0)
 		pSelf->m_lGhosts.add(Item);
 	return 0;
@@ -1012,68 +1015,21 @@ void CMenus::RenderGhost(CUIRect MainView)
 	View.VSplitRight(15, &View, &Scroll);
 
 	int NumGhosts = m_lGhosts.size();
-
-	int Num = (int)(View.h / s_aCols[0].m_Rect.h) + 1;
 	static int s_ScrollBar = 0;
 	static float s_ScrollValue = 0;
+	static int s_SelectedIndex = 0;
 
 	Scroll.HMargin(5.0f, &Scroll);
 	s_ScrollValue = DoScrollbarV(&s_ScrollBar, &Scroll, s_ScrollValue);
 
-	int ScrollNum = NumGhosts - Num + 1;
-	if(ScrollNum > 0)
-	{
-		if(Input()->KeyPress(KEY_MOUSE_WHEEL_UP))
-			s_ScrollValue -= 1.0f / ScrollNum;
-		if(Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN))
-			s_ScrollValue += 1.0f / ScrollNum;
-	}
-	else
-		ScrollNum = 0;
-
-	static int s_SelectedIndex = 0;
-	for(int i = 0; i < m_NumInputEvents; i++)
-	{
-		int NewIndex = -1;
-		if(m_aInputEvents[i].m_Flags & IInput::FLAG_PRESS)
-		{
-			if(m_aInputEvents[i].m_Key == KEY_DOWN)
-				NewIndex = s_SelectedIndex + 1;
-			if(m_aInputEvents[i].m_Key == KEY_UP)
-				NewIndex = s_SelectedIndex - 1;
-		}
-		if(NewIndex > -1 && NewIndex < NumGhosts)
-		{
-			//scroll
-			float IndexY = View.y - s_ScrollValue * ScrollNum * s_aCols[0].m_Rect.h + NewIndex * s_aCols[0].m_Rect.h;
-			int Scroll = View.y > IndexY ? -1 : View.y + View.h < IndexY + s_aCols[0].m_Rect.h ? 1 : 0;
-			if(Scroll)
-			{
-				if(Scroll < 0)
-				{
-					int NumScrolls = (View.y - IndexY + s_aCols[0].m_Rect.h - 1.0f) / s_aCols[0].m_Rect.h;
-					s_ScrollValue -= (1.0f / ScrollNum) * NumScrolls;
-				}
-				else
-				{
-					int NumScrolls = (IndexY + s_aCols[0].m_Rect.h - (View.y + View.h) + s_aCols[0].m_Rect.h - 1.0f) / s_aCols[0].m_Rect.h;
-					s_ScrollValue += (1.0f / ScrollNum) * NumScrolls;
-				}
-			}
-
-			s_SelectedIndex = NewIndex;
-		}
-	}
-
-	if(s_ScrollValue < 0)
-		s_ScrollValue = 0;
-	if(s_ScrollValue > 1)
-		s_ScrollValue = 1;
+	HandleListInputs(View, s_ScrollValue, 1.0f, nullptr, s_aCols[0].m_Rect.h, s_SelectedIndex, NumGhosts);
 
 	// set clipping
 	UI()->ClipEnable(&View);
 
 	CUIRect OriginalView = View;
+	int Num = (int)(View.h / s_aCols[0].m_Rect.h) + 1;
+	int ScrollNum = maximum(NumGhosts - Num + 1, 0);
 	View.y -= s_ScrollValue * ScrollNum * s_aCols[0].m_Rect.h;
 
 	int NewSelected = -1;
@@ -1157,7 +1113,7 @@ void CMenus::RenderGhost(CUIRect MainView)
 				Cursor.m_LineWidth = Button.w;
 
 				char aBuf[64];
-				str_format(aBuf, sizeof(aBuf), "%02d:%02d.%03d", pItem->m_Time / (60 * 1000), (pItem->m_Time / 1000) % 60, pItem->m_Time % 1000);
+				str_time(pItem->m_Time / 10, TIME_HOURS_CENTISECS, aBuf, sizeof(aBuf));
 				TextRender()->TextEx(&Cursor, aBuf, -1);
 			}
 		}
@@ -1177,7 +1133,7 @@ void CMenus::RenderGhost(CUIRect MainView)
 	Status.VSplitLeft(120.0f, &Button, &Status);
 
 	static int s_ReloadButton = 0;
-	if(DoButton_Menu(&s_ReloadButton, Localize("Reload"), 0, &Button))
+	if(DoButton_Menu(&s_ReloadButton, Localize("Reload"), 0, &Button) || Input()->KeyPress(KEY_F5))
 	{
 		m_pClient->m_pGhost->UnloadAll();
 		GhostlistPopulate();

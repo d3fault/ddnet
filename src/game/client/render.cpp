@@ -78,9 +78,7 @@ void CRenderTools::SelectSprite(CDataSprite *pSpr, int Flags, int sx, int sy)
 	int cx = pSpr->m_pSet->m_Gridx;
 	int cy = pSpr->m_pSet->m_Gridy;
 
-	float f = sqrtf(h * h + w * w);
-	gs_SpriteWScale = w / f;
-	gs_SpriteHScale = h / f;
+	GetSpriteScaleImpl(w, h, gs_SpriteWScale, gs_SpriteHScale);
 
 	float x1 = x / (float)cx + 0.5f / (float)(cx * 32);
 	float x2 = (x + w) / (float)cx - 0.5f / (float)(cx * 32);
@@ -116,23 +114,26 @@ void CRenderTools::GetSpriteScale(client_data7::CDataSprite *pSprite, float &Sca
 {
 	int w = pSprite->m_W;
 	int h = pSprite->m_H;
-	float f = sqrtf(h * h + w * w);
-	ScaleX = w / f;
-	ScaleY = h / f;
+	GetSpriteScaleImpl(w, h, ScaleX, ScaleY);
 }
 
 void CRenderTools::GetSpriteScale(struct CDataSprite *pSprite, float &ScaleX, float &ScaleY)
 {
 	int w = pSprite->m_W;
 	int h = pSprite->m_H;
-	float f = sqrtf(h * h + w * w);
-	ScaleX = w / f;
-	ScaleY = h / f;
+	GetSpriteScaleImpl(w, h, ScaleX, ScaleY);
 }
 
 void CRenderTools::GetSpriteScale(int id, float &ScaleX, float &ScaleY)
 {
 	GetSpriteScale(&g_pData->m_aSprites[id], ScaleX, ScaleY);
+}
+
+void CRenderTools::GetSpriteScaleImpl(int Width, int Height, float &ScaleX, float &ScaleY)
+{
+	float f = sqrtf(Height * Height + Width * Width);
+	ScaleX = Width / f;
+	ScaleY = Height / f;
 }
 
 void CRenderTools::DrawSprite(float x, float y, float Size)
@@ -173,9 +174,11 @@ void CRenderTools::QuadContainerAddSprite(int QuadContainerIndex, float X, float
 
 void CRenderTools::DrawRoundRectExt(float x, float y, float w, float h, float r, int Corners)
 {
-	IGraphics::CFreeformItem ArrayF[32];
 	int NumItems = 0;
-	int Num = 8;
+	const int Num = 8;
+
+	IGraphics::CFreeformItem ArrayF[Num * 4];
+
 	for(int i = 0; i < Num; i += 2)
 	{
 		float a1 = i / (float)Num * pi / 2;
@@ -455,6 +458,31 @@ int CRenderTools::CreateRoundRectQuadContainer(float x, float y, float w, float 
 	return ContainerIndex;
 }
 
+void CRenderTools::DrawUIElRect(CUIElement::SUIElementRect &ElUIRect, const CUIRect *pRect, ColorRGBA Color, int Corners, float Rounding)
+{
+	bool NeedsRecreate = false;
+	if(ElUIRect.m_UIRectQuadContainer == -1 || ElUIRect.m_X != pRect->x || ElUIRect.m_Y != pRect->y || ElUIRect.m_Width != pRect->w || ElUIRect.m_Height != pRect->h)
+	{
+		if(ElUIRect.m_UIRectQuadContainer != -1)
+			Graphics()->DeleteQuadContainer(ElUIRect.m_UIRectQuadContainer);
+		NeedsRecreate = true;
+	}
+	if(NeedsRecreate)
+	{
+		ElUIRect.m_X = pRect->x;
+		ElUIRect.m_Y = pRect->y;
+		ElUIRect.m_Width = pRect->w;
+		ElUIRect.m_Height = pRect->h;
+
+		Graphics()->SetColor(Color);
+		ElUIRect.m_UIRectQuadContainer = CreateRoundRectQuadContainer(pRect->x, pRect->y, pRect->w, pRect->h, Rounding, Corners);
+		Graphics()->SetColor(1, 1, 1, 1);
+	}
+
+	Graphics()->TextureClear();
+	Graphics()->RenderQuadContainer(ElUIRect.m_UIRectQuadContainer, -1);
+}
+
 void CRenderTools::DrawRoundRect(float x, float y, float w, float h, float r)
 {
 	DrawRoundRectExt(x, y, w, h, r, 0xf);
@@ -512,6 +540,100 @@ void CRenderTools::DrawCircle(float x, float y, float r, int Segments)
 		Graphics()->QuadsDrawFreeform(Array, NumItems);
 }
 
+void CRenderTools::GetRenderTeeAnimScaleAndBaseSize(CAnimState *pAnim, CTeeRenderInfo *pInfo, float &AnimScale, float &BaseSize)
+{
+	AnimScale = pInfo->m_Size * 1.0f / 64.0f;
+	BaseSize = pInfo->m_Size;
+}
+
+void CRenderTools::GetRenderTeeBodyScale(float BaseSize, float &BodyScale)
+{
+	BodyScale = g_Config.m_ClFatSkins ? BaseSize * 1.3f : BaseSize;
+	BodyScale /= 64.0f;
+}
+
+void CRenderTools::GetRenderTeeFeetScale(float BaseSize, float &FeetScaleWidth, float &FeetScaleHeight)
+{
+	FeetScaleWidth = BaseSize / 64.0f;
+	FeetScaleHeight = (BaseSize / 2) / 32.0f;
+}
+
+void CRenderTools::GetRenderTeeBodySize(CAnimState *pAnim, CTeeRenderInfo *pInfo, vec2 &BodyOffset, float &Width, float &Height)
+{
+	float AnimScale, BaseSize;
+	GetRenderTeeAnimScaleAndBaseSize(pAnim, pInfo, AnimScale, BaseSize);
+
+	float BodyScale;
+	GetRenderTeeBodyScale(BaseSize, BodyScale);
+
+	Width = pInfo->m_SkinMetrics.m_Body.WidthNormalized() * 64.0f * BodyScale;
+	Height = pInfo->m_SkinMetrics.m_Body.HeightNormalized() * 64.0f * BodyScale;
+	BodyOffset.x = pInfo->m_SkinMetrics.m_Body.OffsetXNormalized() * 64.0f * BodyScale;
+	BodyOffset.y = pInfo->m_SkinMetrics.m_Body.OffsetYNormalized() * 64.0f * BodyScale;
+}
+
+void CRenderTools::GetRenderTeeFeetSize(CAnimState *pAnim, CTeeRenderInfo *pInfo, vec2 &FeetOffset, float &Width, float &Height)
+{
+	float AnimScale, BaseSize;
+	GetRenderTeeAnimScaleAndBaseSize(pAnim, pInfo, AnimScale, BaseSize);
+
+	float FeetScaleWidth, FeetScaleHeight;
+	GetRenderTeeFeetScale(BaseSize, FeetScaleWidth, FeetScaleHeight);
+
+	Width = pInfo->m_SkinMetrics.m_Feet.WidthNormalized() * 64.0f * FeetScaleWidth;
+	Height = pInfo->m_SkinMetrics.m_Feet.HeightNormalized() * 32.0f * FeetScaleHeight;
+	FeetOffset.x = pInfo->m_SkinMetrics.m_Feet.OffsetXNormalized() * 64.0f * FeetScaleWidth;
+	FeetOffset.y = pInfo->m_SkinMetrics.m_Feet.OffsetYNormalized() * 32.0f * FeetScaleHeight;
+}
+
+void CRenderTools::GetRenderTeeOffsetToRenderedTee(CAnimState *pAnim, CTeeRenderInfo *pInfo, vec2 &TeeOffsetToMid)
+{
+	float AnimScale, BaseSize;
+	GetRenderTeeAnimScaleAndBaseSize(pAnim, pInfo, AnimScale, BaseSize);
+	vec2 BodyPos = vec2(pAnim->GetBody()->m_X, pAnim->GetBody()->m_Y) * AnimScale;
+
+	float AssumedScale = BaseSize / 64.0f;
+
+	// just use the lowest feet
+	vec2 FeetPos;
+	CAnimKeyframe *pFoot = pAnim->GetFrontFoot();
+	FeetPos = vec2(pFoot->m_X * AnimScale, pFoot->m_Y * AnimScale);
+	pFoot = pAnim->GetBackFoot();
+	FeetPos = vec2(FeetPos.x, maximum(FeetPos.y, pFoot->m_Y * AnimScale));
+
+	vec2 BodyOffset;
+	float BodyWidth, BodyHeight;
+	GetRenderTeeBodySize(pAnim, pInfo, BodyOffset, BodyWidth, BodyHeight);
+
+	// -32 is the assumed min relative position for the quad
+	float MinY = -32.0f * AssumedScale;
+	// the body pos shifts the body away from center
+	MinY += BodyPos.y;
+	// the actual body is smaller tho, bcs it doesnt use the full skin image in most cases
+	MinY += BodyOffset.y;
+
+	vec2 FeetOffset;
+	float FeetWidth, FeetHeight;
+	GetRenderTeeFeetSize(pAnim, pInfo, FeetOffset, FeetWidth, FeetHeight);
+
+	// MaxY builds up from the MinY
+	float MaxY = MinY + BodyHeight;
+	// if the body is smaller than the total feet offset, use feet
+	// since feets are smaller in height, respect the assumed relative position
+	MaxY = maximum(MaxY, (-16.0f * AssumedScale + FeetPos.y) + FeetOffset.y + FeetHeight);
+
+	// now we got the full rendered size
+	float FullHeight = (MaxY - MinY);
+
+	// next step is to calculate the offset that was created compared to the assumed relative positon
+	float MidOfRendered = MinY + FullHeight / 2.0f;
+
+	// TODO: x coordinate is ignored for now, bcs it's not really used yet anyway
+	TeeOffsetToMid.x = 0;
+	// negative value, because the calculation that uses this offset should work with addition.
+	TeeOffsetToMid.y = -MidOfRendered;
+}
+
 void CRenderTools::RenderTee(CAnimState *pAnim, CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, float Alpha)
 {
 	vec2 Direction = Dir;
@@ -527,8 +649,8 @@ void CRenderTools::RenderTee(CAnimState *pAnim, CTeeRenderInfo *pInfo, int Emote
 
 		for(int f = 0; f < 2; f++)
 		{
-			float AnimScale = pInfo->m_Size * 1.0f / 64.0f;
-			float BaseSize = pInfo->m_Size;
+			float AnimScale, BaseSize;
+			GetRenderTeeAnimScaleAndBaseSize(pAnim, pInfo, AnimScale, BaseSize);
 			if(f == 1)
 			{
 				Graphics()->QuadsSetRotation(pAnim->GetBody()->m_Angle * pi * 2);
@@ -536,9 +658,10 @@ void CRenderTools::RenderTee(CAnimState *pAnim, CTeeRenderInfo *pInfo, int Emote
 				// draw body
 				Graphics()->SetColor(pInfo->m_ColorBody.r, pInfo->m_ColorBody.g, pInfo->m_ColorBody.b, Alpha);
 				vec2 BodyPos = Position + vec2(pAnim->GetBody()->m_X, pAnim->GetBody()->m_Y) * AnimScale;
-				float BodySize = g_Config.m_ClFatSkins ? BaseSize * 1.3f : BaseSize;
+				float BodyScale;
+				GetRenderTeeBodyScale(BaseSize, BodyScale);
 				Graphics()->TextureSet(OutLine == 1 ? pSkinTextures->m_BodyOutline : pSkinTextures->m_Body);
-				Graphics()->RenderQuadContainerAsSprite(m_TeeQuadContainerIndex, OutLine, BodyPos.x, BodyPos.y, BodySize / 64.f, BodySize / 64.f);
+				Graphics()->RenderQuadContainerAsSprite(m_TeeQuadContainerIndex, OutLine, BodyPos.x, BodyPos.y, BodyScale, BodyScale);
 
 				// draw eyes
 				if(p == 1)

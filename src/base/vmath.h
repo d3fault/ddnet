@@ -22,7 +22,7 @@ public:
 		T y, v;
 	};
 
-	vector2_base() {}
+	vector2_base() = default;
 	vector2_base(T nx, T ny)
 	{
 		x = nx;
@@ -77,8 +77,6 @@ public:
 	bool operator==(const vector2_base &v) const { return x == v.x && y == v.y; } //TODO: do this with an eps instead
 	bool operator!=(const vector2_base &v) const { return x != v.x || y != v.y; }
 
-	operator const T *() { return &x; }
-
 	T &operator[](const int index) { return index ? y : x; }
 };
 
@@ -107,23 +105,31 @@ inline vector2_base<T> normalize(const vector2_base<T> &v)
 	return vector2_base<T>(v.x * l, v.y * l);
 }
 
+template<typename T>
+inline vector2_base<T> normalize_pre_length(const vector2_base<T> &v, T len)
+{
+	return vector2_base<T>(v.x / len, v.y / len);
+}
+
 typedef vector2_base<float> vec2;
 typedef vector2_base<bool> bvec2;
 typedef vector2_base<int> ivec2;
 
 template<typename T>
-inline vector2_base<T> closest_point_on_line(vector2_base<T> line_point0, vector2_base<T> line_point1, vector2_base<T> target_point)
+inline bool closest_point_on_line(vector2_base<T> line_point0, vector2_base<T> line_point1, vector2_base<T> target_point, vector2_base<T> &out_pos)
 {
 	vector2_base<T> c = target_point - line_point0;
 	vector2_base<T> v = (line_point1 - line_point0);
-	v = normalize(v);
 	T d = length(line_point0 - line_point1);
-	T t = dot(v, c) / d;
-	return mix(line_point0, line_point1, clamp(t, (T)0, (T)1));
-	/*
-	if (t < 0) t = 0;
-	if (t > 1.0f) return 1.0f;
-	return t;*/
+	if(d > 0)
+	{
+		v = normalize_pre_length<T>(v, d);
+		T t = dot(v, c) / d;
+		out_pos = mix(line_point0, line_point1, clamp(t, (T)0, (T)1));
+		return true;
+	}
+	else
+		return false;
 }
 
 // ------------------------------------
@@ -144,7 +150,7 @@ public:
 		T z, b, v, l;
 	};
 
-	vector3_base() {}
+	vector3_base() = default;
 	vector3_base(T nx, T ny, T nz)
 	{
 		x = nx;
@@ -204,8 +210,6 @@ public:
 	}
 
 	bool operator==(const vector3_base &v) const { return x == v.x && y == v.y && z == v.z; } //TODO: do this with an eps instead
-
-	operator const T *() { return &x; }
 };
 
 template<typename T>
@@ -278,7 +282,7 @@ public:
 		T w, a;
 	};
 
-	vector4_base() {}
+	vector4_base() = default;
 	vector4_base(T nx, T ny, T nz, T nw)
 	{
 		x = nx;
@@ -345,8 +349,6 @@ public:
 	}
 
 	bool operator==(const vector4_base &v) const { return x == v.x && y == v.y && z == v.z && w == v.w; } //TODO: do this with an eps instead
-
-	operator const T *() { return &x; }
 };
 
 typedef vector4_base<float> vec4;

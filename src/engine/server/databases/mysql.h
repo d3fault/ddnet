@@ -5,7 +5,7 @@
 #include <engine/server/databases/connection.h>
 #include <memory>
 
-class lock;
+class CLock;
 namespace sql {
 class Connection;
 class PreparedStatement;
@@ -34,6 +34,7 @@ public:
 	virtual const char *InsertTimestampAsUtc() const { return "?"; }
 	virtual const char *CollateNocase() const { return "CONVERT(? USING utf8mb4) COLLATE utf8mb4_general_ci"; }
 	virtual const char *InsertIgnore() const { return "INSERT IGNORE"; };
+	virtual const char *Random() const { return "RAND()"; };
 
 	virtual Status Connect();
 	virtual void Disconnect();
@@ -78,7 +79,7 @@ private:
 	bool m_Setup;
 
 	std::atomic_bool m_InUse;
-	static lock m_SqlDriverLock;
+	static CLock m_SqlDriverLock;
 };
 
 #endif // ENGINE_SERVER_DATABASES_MYSQL_H

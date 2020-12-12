@@ -10,8 +10,6 @@
 
 #include "uuid_manager.h"
 
-#include <zlib.h>
-
 static const int DEBUG = 0;
 
 enum
@@ -549,9 +547,9 @@ SHA256_DIGEST CDataFileReader::Sha256()
 	if(!m_pDataFile)
 	{
 		SHA256_DIGEST Result;
-		for(unsigned i = 0; i < sizeof(Result.data); i++)
+		for(unsigned char &d : Result.data)
 		{
-			Result.data[i] = 0xff;
+			d = 0xff;
 		}
 		return Result;
 	}
@@ -591,6 +589,12 @@ CDataFileWriter::~CDataFileWriter()
 {
 	free(m_pItemTypes);
 	m_pItemTypes = 0;
+	for(int i = 0; i < m_NumItems; i++)
+		if(m_pItems[i].m_pData)
+			free(m_pItems[i].m_pData);
+	for(int i = 0; i < m_NumDatas; ++i)
+		if(m_pDatas[i].m_pCompressedData)
+			free(m_pDatas[i].m_pCompressedData);
 	free(m_pItems);
 	m_pItems = 0;
 	free(m_pDatas);
@@ -686,7 +690,7 @@ int CDataFileWriter::AddItem(int Type, int ID, int Size, void *pData)
 	return m_NumItems - 1;
 }
 
-int CDataFileWriter::AddData(int Size, void *pData)
+int CDataFileWriter::AddData(int Size, void *pData, int CompressionLevel)
 {
 	dbg_assert(m_NumDatas < 1024, "too much data");
 
@@ -694,7 +698,7 @@ int CDataFileWriter::AddData(int Size, void *pData)
 	unsigned long s = compressBound(Size);
 	void *pCompData = malloc(s); // temporary buffer that we use during compression
 
-	int Result = compress((Bytef *)pCompData, &s, (Bytef *)pData, Size); // ignore_convention
+	int Result = compress2((Bytef *)pCompData, &s, (Bytef *)pData, Size, CompressionLevel); // ignore_convention
 	if(Result != Z_OK)
 	{
 		dbg_msg("datafile", "compression error %d", Result);
@@ -895,9 +899,15 @@ int CDataFileWriter::Finish()
 
 	// free data
 	for(int i = 0; i < m_NumItems; i++)
+	{
 		free(m_pItems[i].m_pData);
+		m_pItems[i].m_pData = 0;
+	}
 	for(int i = 0; i < m_NumDatas; ++i)
+	{
 		free(m_pDatas[i].m_pCompressedData);
+		m_pDatas[i].m_pCompressedData = 0;
+	}
 
 	io_close(m_File);
 	m_File = 0;

@@ -23,6 +23,9 @@ public:
 
 	CSkin::SSkinTextures m_OriginalRenderSkin;
 	CSkin::SSkinTextures m_ColorableRenderSkin;
+
+	CSkin::SSkinMetrics m_SkinMetrics;
+
 	bool m_CustomColoredSkin;
 	ColorRGBA m_BloodColor;
 
@@ -50,6 +53,10 @@ class CRenderTools
 {
 	int m_TeeQuadContainerIndex;
 
+	void GetRenderTeeAnimScaleAndBaseSize(class CAnimState *pAnim, CTeeRenderInfo *pInfo, float &AnimScale, float &BaseSize);
+	void GetRenderTeeBodyScale(float BaseSize, float &BodyScale);
+	void GetRenderTeeFeetScale(float BaseSize, float &FeetScaleWidth, float &FeetScaleHeight);
+
 public:
 	class IGraphics *m_pGraphics;
 	class CUI *m_pUI;
@@ -69,6 +76,7 @@ public:
 	void GetSpriteScale(client_data7::CDataSprite *pSprite, float &ScaleX, float &ScaleY);
 	void GetSpriteScale(struct CDataSprite *pSprite, float &ScaleX, float &ScaleY);
 	void GetSpriteScale(int id, float &ScaleX, float &ScaleY);
+	void GetSpriteScaleImpl(int Width, int Height, float &ScaleX, float &ScaleY);
 
 	void DrawSprite(float x, float y, float size);
 	void DrawSprite(float x, float y, float ScaledWidth, float ScaledHeight);
@@ -84,6 +92,8 @@ public:
 
 	int CreateRoundRectQuadContainer(float x, float y, float w, float h, float r, int Corners);
 
+	void DrawUIElRect(CUIElement::SUIElementRect &ElUIRect, const CUIRect *pRect, ColorRGBA Color, int Corners, float Rounding);
+
 	void DrawUIRect(const CUIRect *pRect, ColorRGBA Color, int Corners, float Rounding);
 	void DrawUIRect4(const CUIRect *pRect, vec4 ColorTopLeft, vec4 ColorTopRight, vec4 ColorBottomLeft, vec4 ColorBottomRight, int Corners, float Rounding);
 
@@ -92,6 +102,11 @@ public:
 	// larger rendering methods
 	void RenderTilemapGenerateSkip(class CLayers *pLayers);
 
+	void GetRenderTeeBodySize(class CAnimState *pAnim, CTeeRenderInfo *pInfo, vec2 &BodyOffset, float &Width, float &Height);
+	void GetRenderTeeFeetSize(class CAnimState *pAnim, CTeeRenderInfo *pInfo, vec2 &FeetOffset, float &Width, float &Height);
+
+	// returns the offset to use, to render the tee with @see RenderTee exactly in the mid
+	void GetRenderTeeOffsetToRenderedTee(class CAnimState *pAnim, CTeeRenderInfo *pInfo, vec2 &TeeOffsetToMid);
 	// object render methods (gc_render_obj.cpp)
 	void RenderTee(class CAnimState *pAnim, CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, float Alpha = 1.0f);
 

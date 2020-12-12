@@ -41,7 +41,6 @@
 #include <engine/shared/demo.h>
 #include <engine/shared/fifo.h>
 #include <engine/shared/filecollection.h>
-#include <engine/shared/ghost.h>
 #include <engine/shared/json.h>
 #include <engine/shared/network.h>
 #include <engine/shared/packer.h>
@@ -264,8 +263,8 @@ void CSmoothTime::Update(CGraph *pGraph, int64 Target, int TimeLeft, int AdjustD
 CClient::CClient() :
 	m_DemoPlayer(&m_SnapshotDelta)
 {
-	for(int i = 0; i < RECORDER_MAX; i++)
-		m_DemoRecorder[i] = CDemoRecorder(&m_SnapshotDelta);
+	for(auto &DemoRecorder : m_DemoRecorder)
+		DemoRecorder = CDemoRecorder(&m_SnapshotDelta);
 
 	m_pEditor = 0;
 	m_pInput = 0;
@@ -329,6 +328,7 @@ CClient::CClient() :
 	str_format(m_aDDNetInfoTmp, sizeof(m_aDDNetInfoTmp), DDNET_INFO ".%d.tmp", pid());
 	m_pDDNetInfoTask = NULL;
 	m_aNews[0] = '\0';
+	m_Points = -1;
 
 	m_CurrentServerInfoRequestTime = -1;
 
@@ -359,6 +359,8 @@ CClient::CClient() :
 	m_GenerateTimeoutSeed = true;
 
 	m_FrameTimeAvg = 0.0001f;
+	m_BenchmarkFile = 0;
+	m_BenchmarkStopTime = 0;
 }
 
 // ----- send functions -----
@@ -403,9 +405,9 @@ int CClient::SendMsg(CMsgPacker *pMsg, int Flags)
 
 	if(Flags & MSGFLAG_RECORD)
 	{
-		for(int i = 0; i < RECORDER_MAX; i++)
-			if(m_DemoRecorder[i].IsRecording())
-				m_DemoRecorder[i].RecordMessage(Packet.m_pData, Packet.m_DataSize);
+		for(auto &i : m_DemoRecorder)
+			if(i.IsRecording())
+				i.RecordMessage(Packet.m_pData, Packet.m_DataSize);
 	}
 
 	if(!(Flags & MSGFLAG_NOSEND))
@@ -501,7 +503,7 @@ void CClient::SendInput()
 
 	bool Force = false;
 	// fetch input
-	for(int Dummy = 0; Dummy < 2; Dummy++)
+	for(int Dummy = 0; Dummy < NUM_DUMMIES; Dummy++)
 	{
 		if(!m_DummyConnected && Dummy != 0)
 		{
@@ -1165,8 +1167,8 @@ const char *CClient::LoadMap(const char *pName, const char *pFilename, SHA256_DI
 		return s_aErrorMsg;
 	}
 
-	// get the crc of the map
-	if(m_pMap->Crc() != WantedCrc)
+	// Only check CRC if we don't have the secure SHA256.
+	if(!pWantedSha256 && m_pMap->Crc() != WantedCrc)
 	{
 		str_format(s_aErrorMsg, sizeof(s_aErrorMsg), "map differs from the server. %08x != %08x", m_pMap->Crc(), WantedCrc);
 		m_pConsole->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "client", s_aErrorMsg);
@@ -1196,15 +1198,17 @@ const char *CClient::LoadMapSearch(const char *pMapName, SHA256_DIGEST *pWantedS
 	char aWanted[256];
 	char aWantedSha256[SHA256_MAXSTRSIZE];
 
-	aWanted[0] = 0;
-
 	if(pWantedSha256)
 	{
 		sha256_str(*pWantedSha256, aWantedSha256, sizeof(aWantedSha256));
-		str_format(aWanted, sizeof(aWanted), " sha256=%s", aWantedSha256);
+		str_format(aWanted, sizeof(aWanted), "sha256=%s", aWantedSha256);
+	}
+	else
+	{
+		str_format(aWanted, sizeof(aWanted), "crc=%08x", WantedCrc);
 	}
 
-	str_format(aBuf, sizeof(aBuf), "loading map, map=%s wanted%s crc=%08x", pMapName, aWanted, WantedCrc);
+	str_format(aBuf, sizeof(aBuf), "loading map, map=%s wanted %s", pMapName, aWanted);
 	m_pConsole->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "client", aBuf);
 	SetState(IClient::STATE_LOADING);
 
@@ -1217,14 +1221,15 @@ const char *CClient::LoadMapSearch(const char *pMapName, SHA256_DIGEST *pWantedS
 	// try the downloaded maps
 	if(pWantedSha256)
 	{
-		str_format(aBuf, sizeof(aBuf), "downloadedmaps/%s_%08x_%s.map", pMapName, WantedCrc, aWantedSha256);
+		str_format(aBuf, sizeof(aBuf), "downloadedmaps/%s_%s.map", pMapName, aWantedSha256);
+	}
+	else
+	{
+		str_format(aBuf, sizeof(aBuf), "downloadedmaps/%s_%08x.map", pMapName, WantedCrc);
 		pError = LoadMap(pMapName, aBuf, pWantedSha256, WantedCrc);
 		if(!pError)
 			return pError;
 	}
-
-	// try the downloaded maps folder without appending the sha256
-	str_format(aBuf, sizeof(aBuf), "downloadedmaps/%s_%08x.map", pMapName, WantedCrc);
 	pError = LoadMap(pMapName, aBuf, pWantedSha256, WantedCrc);
 	if(!pError)
 		return pError;
@@ -1566,28 +1571,23 @@ bool CClient::ShouldSendChatTimeoutCodeHeuristic()
 
 static void FormatMapDownloadFilename(const char *pName, SHA256_DIGEST *pSha256, int Crc, bool Temp, char *pBuffer, int BufferSize)
 {
-	char aSha256[SHA256_MAXSTRSIZE + 1];
-	aSha256[0] = 0;
+	char aHash[SHA256_MAXSTRSIZE];
 	if(pSha256)
 	{
-		aSha256[0] = '_';
-		sha256_str(*pSha256, aSha256 + 1, sizeof(aSha256) - 1);
+		sha256_str(*pSha256, aHash, sizeof(aHash));
+	}
+	else
+	{
+		str_format(aHash, sizeof(aHash), "%08x", Crc);
 	}
 
 	if(Temp)
 	{
-		str_format(pBuffer, BufferSize, "%s_%08x%s.map.%d.tmp",
-			pName,
-			Crc,
-			aSha256,
-			pid());
+		str_format(pBuffer, BufferSize, "%s_%s.map.%d.tmp", pName, aHash, pid());
 	}
 	else
 	{
-		str_format(pBuffer, BufferSize, "%s_%08x%s.map",
-			pName,
-			Crc,
-			aSha256);
+		str_format(pBuffer, BufferSize, "%s_%s.map", pName, aHash);
 	}
 }
 
@@ -2021,12 +2021,12 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket)
 					SnapshotRemoveExtraInfo(aExtraInfoRemoved);
 
 					// add snapshot to demo
-					for(int i = 0; i < RECORDER_MAX; i++)
+					for(auto &DemoRecorder : m_DemoRecorder)
 					{
-						if(m_DemoRecorder[i].IsRecording())
+						if(DemoRecorder.IsRecording())
 						{
 							// write snapshot
-							m_DemoRecorder[i].RecordSnapshot(GameTick, aExtraInfoRemoved, SnapSize);
+							DemoRecorder.RecordSnapshot(GameTick, aExtraInfoRemoved, SnapSize);
 						}
 					}
 
@@ -2093,9 +2093,9 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket)
 		if((pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 || Msg == NETMSGTYPE_SV_EXTRAPROJECTILE)
 		{
 			// game message
-			for(int i = 0; i < RECORDER_MAX; i++)
-				if(m_DemoRecorder[i].IsRecording())
-					m_DemoRecorder[i].RecordMessage(pPacket->m_pData, pPacket->m_DataSize);
+			for(auto &DemoRecorder : m_DemoRecorder)
+				if(DemoRecorder.IsRecording())
+					DemoRecorder.RecordMessage(pPacket->m_pData, pPacket->m_DataSize);
 
 			GameClient()->OnMessage(Msg, &Unpacker);
 		}
@@ -2524,13 +2524,17 @@ void CClient::LoadDDNetInfo()
 
 		str_copy(m_aNews, pNewsString, sizeof(m_aNews));
 	}
+
+	const json_value *pPoints = json_object_get(pDDNetInfo, "points");
+	if(pPoints->type == json_integer)
+		m_Points = pPoints->u.integer;
 }
 
 void CClient::PumpNetwork()
 {
-	for(int i = 0; i < NUM_CLIENTS; i++)
+	for(auto &NetClient : m_NetClient)
 	{
-		m_NetClient[i].Update();
+		NetClient.Update();
 	}
 
 	if(State() != IClient::STATE_DEMOPLAYBACK)
@@ -2877,7 +2881,6 @@ void CClient::Update()
 			FinishDDNetInfo();
 		else if(m_pDDNetInfoTask->State() == HTTP_ERROR)
 		{
-			m_Warnings.emplace_back(SWarning(Localize("Downloading ddnet-info.json failed")));
 			Storage()->RemoveFile(m_aDDNetInfoTmp, IStorage::TYPE_SAVE);
 			ResetDDNetInfo();
 		}
@@ -3055,12 +3058,12 @@ void CClient::Run()
 			mem_zero(&BindAddr, sizeof(BindAddr));
 			BindAddr.type = NETTYPE_ALL;
 		}
-		for(int i = 0; i < NUM_CLIENTS; i++)
+		for(auto &NetClient : m_NetClient)
 		{
 			do
 			{
 				BindAddr.port = (secure_rand() % 64511) + 1024;
-			} while(!m_NetClient[i].Open(BindAddr, 0));
+			} while(!NetClient.Open(BindAddr, 0));
 		}
 	}
 
@@ -3256,6 +3259,19 @@ void CClient::Run()
 				if(m_RenderFrameTime > m_RenderFrameTimeHigh)
 					m_RenderFrameTimeHigh = m_RenderFrameTime;
 				m_FpsGraph.Add(1.0f / m_RenderFrameTime, 1, 1, 1);
+
+				if(m_BenchmarkFile)
+				{
+					char aBuf[64];
+					str_format(aBuf, sizeof(aBuf), "Frametime %d us\n", (int)(m_RenderFrameTime * 1000000));
+					io_write(m_BenchmarkFile, aBuf, strlen(aBuf));
+					if(time_get() > m_BenchmarkStopTime)
+					{
+						io_close(m_BenchmarkFile);
+						m_BenchmarkFile = 0;
+						Quit();
+					}
+				}
 
 				m_FrameTimeAvg = m_FrameTimeAvg * 0.9f + m_RenderFrameTime * 0.1f;
 
@@ -3705,6 +3721,13 @@ const char *CClient::DemoPlayer_Play(const char *pFilename, int StorageType)
 {
 	int Crc;
 	const char *pError;
+
+	IOHANDLE File = Storage()->OpenFile(pFilename, IOFLAG_READ, StorageType);
+	if(!File)
+		return "error opening demo file";
+
+	io_close(File);
+
 	Disconnect();
 	m_NetClient[CLIENT_MAIN].ResetErrorString();
 
@@ -3779,7 +3802,9 @@ const char *CClient::DemoPlayer_Render(const char *pFilename, int StorageType, c
 void CClient::Con_Play(IConsole::IResult *pResult, void *pUserData)
 {
 	CClient *pSelf = (CClient *)pUserData;
-	pSelf->DemoPlayer_Play(pResult->GetString(0), IStorage::TYPE_ALL);
+	const char *pError = pSelf->DemoPlayer_Play(pResult->GetString(0), IStorage::TYPE_ALL);
+	if(pError)
+		pSelf->m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "demo_player", pError);
 }
 
 void CClient::Con_DemoPlay(IConsole::IResult *pResult, void *pUserData)
@@ -3863,7 +3888,8 @@ void CClient::DemoRecorder_Stop(int Recorder, bool RemoveFile)
 	if(RemoveFile)
 	{
 		const char *pFilename = (&m_DemoRecorder[Recorder])->GetCurrentFilename();
-		Storage()->RemoveFile(pFilename, IStorage::TYPE_SAVE);
+		if(pFilename[0] != '\0')
+			Storage()->RemoveFile(pFilename, IStorage::TYPE_SAVE);
 	}
 }
 
@@ -3899,6 +3925,21 @@ void CClient::Con_AddDemoMarker(IConsole::IResult *pResult, void *pUserData)
 	pSelf->DemoRecorder_AddDemoMarker(RECORDER_RACE);
 	pSelf->DemoRecorder_AddDemoMarker(RECORDER_AUTO);
 	pSelf->DemoRecorder_AddDemoMarker(RECORDER_REPLAYS);
+}
+
+void CClient::Con_BenchmarkQuit(IConsole::IResult *pResult, void *pUserData)
+{
+	CClient *pSelf = (CClient *)pUserData;
+	int Seconds = pResult->GetInteger(0);
+	const char *pFilename = pResult->GetString(1);
+	pSelf->BenchmarkQuit(Seconds, pFilename);
+}
+
+void CClient::BenchmarkQuit(int Seconds, const char *pFilename)
+{
+	char aBuf[MAX_PATH_LENGTH];
+	m_BenchmarkFile = Storage()->OpenFile(pFilename, IOFLAG_WRITE, IStorage::TYPE_ABSOLUTE, aBuf, sizeof(aBuf));
+	m_BenchmarkStopTime = time_get() + time_freq() * Seconds;
 }
 
 void CClient::ServerBrowserUpdate()
@@ -4086,11 +4127,11 @@ void CClient::RegisterCommands()
 	// register server dummy commands for tab completion
 	m_pConsole->Register("kick", "i[id] ?r[reason]", CFGFLAG_SERVER, 0, 0, "Kick player with specified id for any reason");
 	m_pConsole->Register("ban", "s[ip|id] ?i[minutes] r[reason]", CFGFLAG_SERVER, 0, 0, "Ban player with ip/id for x minutes for any reason");
-	m_pConsole->Register("unban", "s[ip]", CFGFLAG_SERVER, 0, 0, "Unban ip");
+	m_pConsole->Register("unban", "r[ip]", CFGFLAG_SERVER, 0, 0, "Unban ip");
 	m_pConsole->Register("bans", "", CFGFLAG_SERVER, 0, 0, "Show banlist");
 	m_pConsole->Register("status", "?r[name]", CFGFLAG_SERVER, 0, 0, "List players containing name or all players");
 	m_pConsole->Register("shutdown", "", CFGFLAG_SERVER, 0, 0, "Shut down");
-	m_pConsole->Register("record", "s[file]", CFGFLAG_SERVER, 0, 0, "Record to a file");
+	m_pConsole->Register("record", "r[file]", CFGFLAG_SERVER, 0, 0, "Record to a file");
 	m_pConsole->Register("stoprecord", "", CFGFLAG_SERVER, 0, 0, "Stop recording");
 	m_pConsole->Register("reload", "", CFGFLAG_SERVER, 0, 0, "Reload the map");
 
@@ -4100,7 +4141,7 @@ void CClient::RegisterCommands()
 	m_pConsole->Register("quit", "", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_Quit, this, "Quit Teeworlds");
 	m_pConsole->Register("exit", "", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_Quit, this, "Quit Teeworlds");
 	m_pConsole->Register("minimize", "", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_Minimize, this, "Minimize Teeworlds");
-	m_pConsole->Register("connect", "s[host|ip]", CFGFLAG_CLIENT, Con_Connect, this, "Connect to the specified host/ip");
+	m_pConsole->Register("connect", "r[host|ip]", CFGFLAG_CLIENT, Con_Connect, this, "Connect to the specified host/ip");
 	m_pConsole->Register("disconnect", "", CFGFLAG_CLIENT, Con_Disconnect, this, "Disconnect from the server");
 	m_pConsole->Register("ping", "", CFGFLAG_CLIENT, Con_Ping, this, "Ping the current server");
 	m_pConsole->Register("screenshot", "", CFGFLAG_CLIENT, Con_Screenshot, this, "Take a screenshot");
@@ -4111,20 +4152,21 @@ void CClient::RegisterCommands()
 #endif
 
 	m_pConsole->Register("rcon", "r[rcon-command]", CFGFLAG_CLIENT, Con_Rcon, this, "Send specified command to rcon");
-	m_pConsole->Register("rcon_auth", "s[password]", CFGFLAG_CLIENT, Con_RconAuth, this, "Authenticate to rcon");
+	m_pConsole->Register("rcon_auth", "r[password]", CFGFLAG_CLIENT, Con_RconAuth, this, "Authenticate to rcon");
 	m_pConsole->Register("rcon_login", "s[username] r[password]", CFGFLAG_CLIENT, Con_RconLogin, this, "Authenticate to rcon with a username");
 	m_pConsole->Register("play", "r[file]", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_Play, this, "Play the file specified");
-	m_pConsole->Register("record", "?s[file]", CFGFLAG_CLIENT, Con_Record, this, "Record to the file");
+	m_pConsole->Register("record", "?r[file]", CFGFLAG_CLIENT, Con_Record, this, "Record to the file");
 	m_pConsole->Register("stoprecord", "", CFGFLAG_CLIENT, Con_StopRecord, this, "Stop recording");
 	m_pConsole->Register("add_demomarker", "", CFGFLAG_CLIENT, Con_AddDemoMarker, this, "Add demo timeline marker");
-	m_pConsole->Register("add_favorite", "s[host|ip]", CFGFLAG_CLIENT, Con_AddFavorite, this, "Add a server as a favorite");
-	m_pConsole->Register("remove_favorite", "s[host|ip]", CFGFLAG_CLIENT, Con_RemoveFavorite, this, "Remove a server from favorites");
+	m_pConsole->Register("add_favorite", "r[host|ip]", CFGFLAG_CLIENT, Con_AddFavorite, this, "Add a server as a favorite");
+	m_pConsole->Register("remove_favorite", "r[host|ip]", CFGFLAG_CLIENT, Con_RemoveFavorite, this, "Remove a server from favorites");
 	m_pConsole->Register("demo_slice_start", "", CFGFLAG_CLIENT, Con_DemoSliceBegin, this, "");
 	m_pConsole->Register("demo_slice_end", "", CFGFLAG_CLIENT, Con_DemoSliceEnd, this, "");
 	m_pConsole->Register("demo_play", "", CFGFLAG_CLIENT, Con_DemoPlay, this, "Play demo");
 	m_pConsole->Register("demo_speed", "i[speed]", CFGFLAG_CLIENT, Con_DemoSpeed, this, "Set demo speed");
 
 	m_pConsole->Register("save_replay", "?i[length]", CFGFLAG_CLIENT, Con_SaveReplay, this, "Save a replay of the last defined amount of seconds");
+	m_pConsole->Register("benchmark_quit", "i[seconds] r[file]", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_BenchmarkQuit, this, "Benchmark frame times for number of seconds to file, then quit");
 
 	m_pConsole->Chain("cl_timeout_seed", ConchainTimeoutSeed, this);
 	m_pConsole->Chain("cl_replays", ConchainReplays, this);
@@ -4373,7 +4415,12 @@ const char *CClient::GetCurrentMapPath()
 	return m_aCurrentMapPath;
 }
 
-unsigned CClient::GetMapCrc()
+SHA256_DIGEST CClient::GetCurrentMapSha256()
+{
+	return m_pMap->Sha256();
+}
+
+unsigned CClient::GetCurrentMapCrc()
 {
 	return m_pMap->Crc();
 }

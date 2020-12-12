@@ -803,6 +803,7 @@ LOCK lock_create(void)
 	if(result != 0)
 	{
 		dbg_msg("lock", "init failed: %d", result);
+		free(lock);
 		return 0;
 	}
 #elif defined(CONF_FAMILY_WINDOWS)
@@ -1029,7 +1030,9 @@ static void netaddr_to_sockaddr_in6(const NETADDR *src, struct sockaddr_in6 *des
 
 static void sockaddr_to_netaddr(const struct sockaddr *src, NETADDR *dst)
 {
-	if(src->sa_family == AF_INET)
+	// Filled by accept, clang-analyzer probably can't tell because of the
+	// (struct sockaddr *) cast.
+	if(src->sa_family == AF_INET) // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
 	{
 		mem_zero(dst, sizeof(NETADDR));
 		dst->type = NETTYPE_IPV4;
@@ -1140,7 +1143,7 @@ int net_host_lookup(const char *hostname, NETADDR *addr, int types)
 	if(priv_net_extract(hostname, host, sizeof(host), &port))
 		return -1;
 
-	dbg_msg("host lookup", "host='%s' port=%d %d", host, port, types);
+	dbg_msg("host_lookup", "host='%s' port=%d %d", host, port, types);
 
 	mem_zero(&hints, sizeof(hints));
 
@@ -1925,7 +1928,7 @@ int net_unix_send(UNIXSOCKET sock, UNIXSOCKETADDR *addr, void *data, int size)
 
 void net_unix_set_addr(UNIXSOCKETADDR *addr, const char *path)
 {
-	mem_zero(addr, sizeof(addr));
+	mem_zero(addr, sizeof(*addr));
 	addr->sun_family = AF_UNIX;
 	str_copy(addr->sun_path, path, sizeof(addr->sun_path));
 }
@@ -2061,7 +2064,7 @@ int fs_storage_path(const char *appname, char *path, int max)
 #else
 	snprintf(path, max, "%s/.%s", home, appname);
 	for(i = strlen(home) + 2; path[i]; i++)
-		path[i] = tolower(path[i]);
+		path[i] = tolower((unsigned char)path[i]);
 #endif
 
 	return 0;
@@ -2414,19 +2417,6 @@ char *str_trim_words(char *str, int words)
 	return str;
 }
 
-/* makes sure that the string only contains the characters between 32 and 127 */
-void str_sanitize_strong(char *str_in)
-{
-	unsigned char *str = (unsigned char *)str_in;
-	while(*str)
-	{
-		*str &= 0x7f;
-		if(*str < 32)
-			*str = 32;
-		str++;
-	}
-}
-
 /* makes sure that the string only contains the characters between 32 and 255 */
 void str_sanitize_cc(char *str_in)
 {
@@ -2690,13 +2680,8 @@ int str_utf8_dist_buffer(const char *a_utf8, const char *b_utf8, int *buf, int b
 	dbg_assert(buf_len >= 2 * (a_utf8_len + 1 + b_utf8_len + 1), "buffer too small");
 	if(a_utf8_len > b_utf8_len)
 	{
-		int tmp1 = a_utf8_len;
 		const char *tmp2 = a_utf8;
-
-		a_utf8_len = b_utf8_len;
 		a_utf8 = b_utf8;
-
-		b_utf8_len = tmp1;
 		b_utf8 = tmp2;
 	}
 	a = buf;
@@ -2712,7 +2697,7 @@ const char *str_find_nocase(const char *haystack, const char *needle)
 	{
 		const char *a = haystack;
 		const char *b = needle;
-		while(*a && *b && tolower(*a) == tolower(*b))
+		while(*a && *b && tolower((unsigned char)*a) == tolower((unsigned char)*b))
 		{
 			a++;
 			b++;
@@ -2850,6 +2835,54 @@ void str_timestamp(char *buffer, int buffer_size)
 #pragma GCC diagnostic pop
 #endif
 
+int str_time(int64 centisecs, int format, char *buffer, int buffer_size)
+{
+	const int sec = 100;
+	const int min = 60 * sec;
+	const int hour = 60 * min;
+	const int day = 24 * hour;
+
+	if(buffer_size <= 0)
+		return -1;
+
+	if(centisecs < 0)
+		centisecs = 0;
+
+	buffer[0] = 0;
+
+	switch(format)
+	{
+	case TIME_DAYS:
+		if(centisecs >= day)
+			return str_format(buffer, buffer_size, "%lldd %02lld:%02lld:%02lld", centisecs / day,
+				(centisecs % day) / hour, (centisecs % hour) / min, (centisecs % min) / sec);
+		// fall through
+	case TIME_HOURS:
+		if(centisecs >= hour)
+			return str_format(buffer, buffer_size, "%02lld:%02lld:%02lld", centisecs / hour,
+				(centisecs % hour) / min, (centisecs % min) / sec);
+		// fall through
+	case TIME_MINS:
+		return str_format(buffer, buffer_size, "%02lld:%02lld", centisecs / min,
+			(centisecs % min) / sec);
+	case TIME_HOURS_CENTISECS:
+		if(centisecs >= hour)
+			return str_format(buffer, buffer_size, "%02lld:%02lld:%02lld.%02lld", centisecs / hour,
+				(centisecs % hour) / min, (centisecs % min) / sec, centisecs % sec);
+		// fall through
+	case TIME_MINS_CENTISECS:
+		return str_format(buffer, buffer_size, "%02lld:%02lld.%02lld", centisecs / min,
+			(centisecs % min) / sec, centisecs % sec);
+	}
+
+	return -1;
+}
+
+int str_time_float(float secs, int format, char *buffer, int buffer_size)
+{
+	return str_time((int64)(secs * 100.0), format, buffer, buffer_size);
+}
+
 void str_escape(char **dst, const char *src, const char *end)
 {
 	while(*src && *dst + 1 < end)
@@ -2965,11 +2998,11 @@ const char *str_utf8_find_nocase(const char *haystack, const char *needle)
 int str_utf8_isspace(int code)
 {
 	return code <= 0x0020 || code == 0x0085 || code == 0x00A0 ||
-	       code == 0x034F || code == 0x1680 || code == 0x180E ||
+	       code == 0x034F || code == 0x1160 || code == 0x1680 || code == 0x180E ||
 	       (code >= 0x2000 && code <= 0x200F) || (code >= 0x2028 && code <= 0x202F) ||
 	       (code >= 0x205F && code <= 0x2064) || (code >= 0x206A && code <= 0x206F) ||
-	       code == 0x2800 || code == 0x3000 ||
-	       (code >= 0xFE00 && code <= 0xFE0F) || code == 0xFEFF ||
+	       code == 0x2800 || code == 0x3000 || code == 0x3164 ||
+	       (code >= 0xFE00 && code <= 0xFE0F) || code == 0xFEFF || code == 0xFFA0 ||
 	       (code >= 0xFFF9 && code <= 0xFFFC);
 }
 

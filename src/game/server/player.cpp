@@ -169,12 +169,12 @@ void CPlayer::Tick()
 #ifdef CONF_DEBUG
 	if(!g_Config.m_DbgDummies || m_ClientID < MAX_CLIENTS - g_Config.m_DbgDummies)
 #endif
-		if(m_ScoreQueryResult != nullptr && m_ScoreQueryResult.use_count() == 1)
+		if(m_ScoreQueryResult != nullptr && m_ScoreQueryResult->m_Completed)
 		{
 			ProcessScoreResult(*m_ScoreQueryResult);
 			m_ScoreQueryResult = nullptr;
 		}
-	if(m_ScoreFinishResult != nullptr && m_ScoreFinishResult.use_count() == 1)
+	if(m_ScoreFinishResult != nullptr && m_ScoreFinishResult->m_Completed)
 	{
 		ProcessScoreResult(*m_ScoreFinishResult);
 		m_ScoreFinishResult = nullptr;
@@ -630,8 +630,14 @@ void CPlayer::SetTeam(int Team, bool DoChatMsg)
 	if(Team == TEAM_SPECTATORS)
 	{
 		CGameControllerDDRace *Controller = (CGameControllerDDRace *)GameServer()->m_pController;
-		if(g_Config.m_SvTeam != 3)
+		if(g_Config.m_SvTeam != 3 && m_pCharacter)
+		{
+			// Joining spectators should not kill a locked team, but should still
+			// check if the team finished by you leaving it.
+			int DDRTeam = m_pCharacter->Team();
 			Controller->m_Teams.SetForceCharacterTeam(m_ClientID, TEAM_FLOCK);
+			Controller->m_Teams.CheckTeamFinished(DDRTeam);
+		}
 	}
 
 	KillCharacter();
@@ -655,10 +661,10 @@ void CPlayer::SetTeam(int Team, bool DoChatMsg)
 	if(Team == TEAM_SPECTATORS)
 	{
 		// update spectator modes
-		for(int i = 0; i < MAX_CLIENTS; ++i)
+		for(auto &pPlayer : GameServer()->m_apPlayers)
 		{
-			if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->m_SpectatorID == m_ClientID)
-				GameServer()->m_apPlayers[i]->m_SpectatorID = SPEC_FREEVIEW;
+			if(pPlayer && pPlayer->m_SpectatorID == m_ClientID)
+				pPlayer->m_SpectatorID = SPEC_FREEVIEW;
 		}
 	}
 }
@@ -926,24 +932,24 @@ void CPlayer::SpectatePlayerName(const char *pName)
 
 void CPlayer::ProcessScoreResult(CScorePlayerResult &Result)
 {
-	if(Result.m_Done) // SQL request was successful
+	if(Result.m_Success) // SQL request was successful
 	{
 		switch(Result.m_MessageKind)
 		{
 		case CScorePlayerResult::DIRECT:
-			for(int i = 0; i < CScorePlayerResult::MAX_MESSAGES; i++)
+			for(auto &aMessage : Result.m_Data.m_aaMessages)
 			{
-				if(Result.m_Data.m_aaMessages[i][0] == 0)
+				if(aMessage[0] == 0)
 					break;
-				GameServer()->SendChatTarget(m_ClientID, Result.m_Data.m_aaMessages[i]);
+				GameServer()->SendChatTarget(m_ClientID, aMessage);
 			}
 			break;
 		case CScorePlayerResult::ALL:
-			for(int i = 0; i < CScorePlayerResult::MAX_MESSAGES; i++)
+			for(auto &aMessage : Result.m_Data.m_aaMessages)
 			{
-				if(Result.m_Data.m_aaMessages[i][0] == 0)
+				if(aMessage[0] == 0)
 					break;
-				GameServer()->SendChat(-1, CGameContext::CHAT_ALL, Result.m_Data.m_aaMessages[i], m_ClientID);
+				GameServer()->SendChat(-1, CGameContext::CHAT_ALL, aMessage, m_ClientID);
 			}
 			break;
 		case CScorePlayerResult::BROADCAST:

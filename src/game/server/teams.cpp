@@ -543,6 +543,7 @@ void CGameTeams::OnFinish(CPlayer *Player, float Time, const char *pTimestamp)
 
 	char aBuf[128];
 	SetCpActive(Player, -2);
+	// Note that the "finished in" message is parsed by the client
 	str_format(aBuf, sizeof(aBuf),
 		"%s finished in: %d minute(s) %5.2f second(s)",
 		Server()->ClientName(ClientID), (int)Time / 60,
@@ -680,7 +681,7 @@ void CGameTeams::ProcessSaveTeam()
 {
 	for(int Team = 0; Team < MAX_CLIENTS; Team++)
 	{
-		if(m_pSaveTeamResult[Team] == nullptr || m_pSaveTeamResult[Team].use_count() != 1)
+		if(m_pSaveTeamResult[Team] == nullptr || !m_pSaveTeamResult[Team]->m_Completed)
 			continue;
 		if(m_pSaveTeamResult[Team]->m_aBroadcast[0] != '\0')
 			GameServer()->SendBroadcast(m_pSaveTeamResult[Team]->m_aBroadcast, -1);

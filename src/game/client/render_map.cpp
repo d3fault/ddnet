@@ -32,7 +32,10 @@ void CRenderTools::RenderEvalEnvelope(CEnvPoint *pPoints, int NumPoints, int Cha
 	}
 
 	int64 MaxPointTime = (int64)pPoints[NumPoints - 1].m_Time * 1000ll;
-	TimeMicros = TimeMicros % MaxPointTime;
+	if(MaxPointTime > 0) // TODO: remove this check when implementing a IO check for maps(in this case broken envelopes)
+		TimeMicros = TimeMicros % MaxPointTime;
+	else
+		TimeMicros = 0;
 
 	int TimeMillis = (int)(TimeMicros / 1000ll);
 	for(int i = 0; i < NumPoints - 1; i++)
@@ -94,7 +97,7 @@ void CRenderTools::RenderQuads(CQuad *pQuads, int NumQuads, int RenderFlags, ENV
 
 void CRenderTools::ForceRenderQuads(CQuad *pQuads, int NumQuads, int RenderFlags, ENVELOPE_EVAL pfnEval, void *pUser, float Alpha)
 {
-	Graphics()->QuadsBegin();
+	Graphics()->TrianglesBegin();
 	float Conv = 1 / 255.0f;
 	for(int i = 0; i < NumQuads; i++)
 	{
@@ -173,7 +176,7 @@ void CRenderTools::ForceRenderQuads(CQuad *pQuads, int NumQuads, int RenderFlags
 			fx2f(pPoints[3].x) + OffsetX, fx2f(pPoints[3].y) + OffsetY);
 		Graphics()->QuadsDrawFreeform(&Freeform, 1);
 	}
-	Graphics()->QuadsEnd();
+	Graphics()->TrianglesEnd();
 }
 
 void CRenderTools::RenderTileRectangle(int RectX, int RectY, int RectW, int RectH,
