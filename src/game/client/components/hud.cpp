@@ -776,6 +776,24 @@ void CHud::RenderHealthAndAmmo(const CNetObj_Character *pCharacter)
 		Graphics()->RenderQuadContainer(m_HudQuadContainerIndex, QuadOffset, 10 - minimum(pCharacter->m_Armor, 10));
 }
 
+void CHud::RenderDummyCopyAndDummyHammer()
+{
+    float x = 5 + (10 * 12 /*from PrepareHealthAmoQuads*/);
+    float y = 5;
+
+    char aBuf[32];
+    if(g_Config.m_ClDummyCopyMoves)
+    {
+        str_format(aBuf, sizeof(aBuf), "dummy_copy");
+        TextRender()->Text(0, x, y, 5.0f, aBuf, -1.0f);
+    }
+    if(g_Config.m_ClDummyHammer)
+    {
+        str_format(aBuf, sizeof(aBuf), "dummy_hammer");
+        TextRender()->Text(0, x, y + 12, 5.0f, aBuf, -1.0f);
+    }
+}
+
 void CHud::RenderSpectatorHud()
 {
 	// draw the box
@@ -838,6 +856,7 @@ void CHud::OnRender()
 			RenderSpectatorHud();
 		}
 
+                RenderDummyCopyAndDummyHammer();
 		if(g_Config.m_ClShowhudTimer)
 			RenderGameTimer();
 		RenderPauseNotification();
